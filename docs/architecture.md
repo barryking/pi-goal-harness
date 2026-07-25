@@ -17,10 +17,16 @@ clean planning session -- submit_plan --> awaiting explicit /execute
                                              v
                                   clean execution session
                                              |
-                                  ready_for_verification
-                                             |
-                                             v
-                                  isolated verifier context
+                       +---------------------+----------------------+
+                       | final review policy | per-step review      |
+                       v                     v                      |
+             ready_for_verification    run declared checks         |
+                       |                     |                      |
+                       |               awaiting human review       |
+                       |          optional /verify | approve/revise |
+                       |                 +--------> next / rework --+
+                       v
+             isolated final verifier context
                                       |             |
                                     PASS           FAIL
                                       |             |
@@ -28,8 +34,8 @@ clean planning session -- submit_plan --> awaiting explicit /execute
 ```
 
 Goal state is stored as Pi custom session entries. It includes the objective,
-criteria, plan, progress, repair count, verification report, memory references,
-and session evidence paths.
+criteria, review policy, plan, step-review evidence, progress, repair counts,
+final verification report, memory references, and session evidence paths.
 
 ## Phase contexts
 
@@ -37,6 +43,8 @@ and session evidence paths.
 |---|---|---|
 | Planning | Objective and bounded verified recall | Old raw transcripts |
 | Execution | Criteria, remaining steps, current defects, bounded recall | Completed-step evidence and planning transcript |
+| Step verification | Current step and its verification method | Recalled memory and executor claims |
+| Human review | Verified step summary and read-only repository access | Editing and later-step execution |
 | Verification | Objective, criteria, verification methods, current observations | Recalled memory and executor claims |
 | Repair | Remaining work and latest defects | Superseded completion evidence |
 
@@ -50,9 +58,11 @@ provenance.
 ## Model routing
 
 Roles are configured separately. The bundled preset uses a stronger model for
-planning and verification, a faster model for implementation, and a balanced
-fallback after repeated repair. A portable current-model preset is available
-for other providers.
+planning and final verification, a faster model for implementation and routine
+step verification, and a balanced fallback after repeated repair. Independent
+step context and the final strong verifier preserve the trust boundary without
+paying the strongest-model cost at every human checkpoint. A portable
+current-model preset is available for other providers.
 
 If a configured model cannot be resolved and current-model fallback is
 enabled, the harness uses the model that was active when the extension session
@@ -63,8 +73,10 @@ started and displays a warning.
 A goal can enter `complete` only when:
 
 - the harness is in verification phase;
+- every plan step is completed and, under `per-step`, human-approved;
 - the verifier submits at least one check;
 - every check has status `pass`;
+- every check has non-empty concrete evidence;
 - the defects list is empty.
 
 Memory promotion occurs only inside that same accepted PASS branch.

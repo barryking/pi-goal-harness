@@ -5,7 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 import {
 	configPath,
+	configuredModels,
 	currentModelConfig,
+	HARNESS_SETUP_PRESETS,
 	loadConfig,
 	OPENAI_CODEX_PRESET,
 	writeConfig,
@@ -17,6 +19,7 @@ process.env.PI_GOAL_HARNESS_HOME = root;
 test("uses the documented OpenAI preset when no user config exists", () => {
 	const config = loadConfig();
 	assert.deepEqual(config, OPENAI_CODEX_PRESET);
+	assert.equal(config.reviewPolicy, "final");
 	assert.equal(configPath(), join(root, "config.json"));
 });
 
@@ -30,5 +33,19 @@ test("writes a namespaced current-model configuration with private permissions",
 	assert.equal(parsed.provider, "example-provider");
 	assert.equal(parsed.planner.model, "fast-model");
 	assert.equal(parsed.executor.model, "fast-model");
+	assert.equal(parsed.stepVerifier.model, "fast-model");
 	assert.equal(loadConfig().verifier.model, "fast-model");
+});
+
+test("setup presets are data-driven and expose unique configured models", () => {
+	const openai = HARNESS_SETUP_PRESETS.find((preset) => preset.id === "openai");
+	const current = HARNESS_SETUP_PRESETS.find((preset) => preset.id === "current");
+	assert.ok(openai);
+	assert.ok(current);
+	assert.deepEqual(openai.create(), OPENAI_CODEX_PRESET);
+	assert.equal(current.create(), undefined);
+
+	const portable = current.create({ provider: "example", id: "model" });
+	assert.ok(portable);
+	assert.deepEqual(configuredModels(portable), [{ provider: "example", id: "model" }]);
 });

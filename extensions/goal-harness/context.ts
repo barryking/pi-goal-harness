@@ -5,7 +5,7 @@ interface ContextStep {
 	title: string;
 	description: string;
 	verification: string;
-	status: "pending" | "done";
+	status: "pending" | "implemented" | "verified" | "done";
 }
 
 interface ContextVerification {
@@ -96,6 +96,31 @@ ${verificationPlanText(state)}
 
 TRUST BOUNDARY
 Do not rely on executor completion claims, progress evidence, recalled memories, or previous outcome summaries. Inspect the repository and produce fresh evidence.`;
+	}
+
+	if (state.phase === "verifying-step") {
+		const step = state.plan.find((candidate) => candidate.status === "implemented");
+		return `GOAL
+${state.objective}
+
+STEP TO VERIFY
+${step ? `${step.id}. ${step.title}\n${step.description}\nVerification method: ${step.verification}` : "No implemented step was found."}
+
+TRUST BOUNDARY
+Do not rely on executor completion claims, progress evidence, recalled memories, or previous outcome summaries. Inspect the repository and produce fresh evidence for this step only.`;
+	}
+
+	if (state.phase === "awaiting-review") {
+		const step = state.plan.find(
+			(candidate) => candidate.status === "implemented" || candidate.status === "verified",
+		);
+		return `GOAL
+${state.objective}
+
+HUMAN REVIEW CHECKPOINT
+${step ? `${step.id}. ${step.title}` : "No verified step was found."}
+
+Discuss the result and its validation evidence without editing. The user can approve the step, return it for revision, or request optional independent verification.`;
 	}
 
 	return `GOAL

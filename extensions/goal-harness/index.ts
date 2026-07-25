@@ -6,12 +6,13 @@ import type {
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
-	currentModelConfig,
+	configuredModels,
 	formatConfig,
+	HARNESS_SETUP_PRESETS,
 	loadConfig,
-	OPENAI_CODEX_PRESET,
 	writeConfig,
 	type ModelProfile,
+	type ReviewPolicy,
 	type ThinkingLevel,
 } from "./config.ts";
 import { buildPhaseContext } from "./context.ts";
@@ -24,65 +25,16 @@ import {
 	repositoryIdentity,
 	searchMemories,
 	storeVerifiedEpisode,
-	type MemoryCandidate,
 	type MemoryNote,
 } from "./memory.ts";
-
-type Phase =
-	| "idle"
-	| "planning"
-	| "awaiting-execution"
-	| "executing"
-	| "verifying"
-	| "paused"
-	| "needs-attention"
-	| "complete";
-type StepStatus = "pending" | "done";
-type CheckStatus = "pass" | "fail" | "not_run";
-
-interface PlanStep {
-	id: number;
-	title: string;
-	description: string;
-	verification: string;
-	status: StepStatus;
-	evidence?: string;
-}
-
-interface VerificationCheck {
-	name: string;
-	status: CheckStatus;
-	evidence: string;
-}
-
-interface VerificationResult {
-	verdict: "pass" | "fail";
-	summary: string;
-	checks: VerificationCheck[];
-	defects: string[];
-	at: string;
-}
-
-interface GoalState {
-	version: 1 | 2;
-	goalId: string;
-	objective: string;
-	acceptanceCriteria: string[];
-	risks: string[];
-	phase: Phase;
-	plan: PlanStep[];
-	repairCycles: number;
-	friction: string[];
-	openItems: string[];
-	memoryNotes: MemoryNote[];
-	recalledMemories: MemoryCandidate[];
-	sessionFiles: string[];
-	startCommit?: string;
-	verification?: VerificationResult;
-	blockedReason?: string;
-	startedAt?: string;
-	updatedAt: string;
-}
+import {
+	emptyState,
+	normalizeState,
+	stepSymbol,
+	verificationValidationError,
+	type GoalState,
+	type VerificationResult,
+} from "./workflow.ts";
 
 interface PlanViewEntry {
 	content: string;
@@ -90,7 +42,9 @@ interface PlanViewEntry {
 
 type PendingAction =
 	| "start-verification"
+	| "start-step-repair"
 	| "start-repair"
+	| "announce-step-review"
 	| "announce-complete"
 	| "announce-needs-attention";
 
@@ -99,6 +53,7 @@ const PLAN_VIEW_ENTRY = "goal-harness-plan";
 const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", "memory_search", "memory_evidence", "memory_note", "submit_plan"];
 const EXECUTE_TOOLS = ["read", "bash", "edit", "write", "memory_search", "memory_evidence", "memory_note", "goal_progress"];
 const VERIFY_TOOLS = ["read", "bash", "grep", "find", "ls", "submit_verification"];
+const STEP_VERIFY_TOOLS = ["read", "bash", "grep", "find", "ls", "submit_step_verification"];
 const HARNESS_TOOLS = new Set([
 	"memory_search",
 	"memory_evidence",
@@ -106,7 +61,24 @@ const HARNESS_TOOLS = new Set([
 	"submit_plan",
 	"goal_progress",
 	"submit_verification",
+	"submit_step_verification",
 ]);
+const VERIFICATION_PARAMETERS = Type.Object({
+	verdict: Type.Union([Type.Literal("pass"), Type.Literal("fail")]),
+	summary: Type.String({ minLength: 1, maxLength: 4000 }),
+	checks: Type.Array(
+		Type.Object({
+			name: Type.String({ minLength: 1, maxLength: 300 }),
+			status: Type.Union([Type.Literal("pass"), Type.Literal("fail"), Type.Literal("not_run")]),
+			evidence: Type.String({ minLength: 1, maxLength: 4000 }),
+		}),
+		{ minItems: 1, maxItems: 50 },
+	),
+	defects: Type.Array(
+		Type.String({ minLength: 1, maxLength: 2000 }),
+		{ maxItems: 50 },
+	),
+});
 
 const READ_ONLY_COMMANDS = [
 	/^\s*cat\b/i,
@@ -115,11 +87,8 @@ const READ_ONLY_COMMANDS = [
 	/^\s*less\b/i,
 	/^\s*more\b/i,
 	/^\s*grep\b/i,
-	/^\s*find\b/i,
 	/^\s*ls\b/i,
 	/^\s*pwd\b/i,
-	/^\s*echo\b/i,
-	/^\s*printf\b/i,
 	/^\s*wc\b/i,
 	/^\s*sort\b/i,
 	/^\s*uniq\b/i,
@@ -131,8 +100,6 @@ const READ_ONLY_COMMANDS = [
 	/^\s*tree\b/i,
 	/^\s*which\b/i,
 	/^\s*type\b/i,
-	/^\s*env\b/i,
-	/^\s*printenv\b/i,
 	/^\s*uname\b/i,
 	/^\s*whoami\b/i,
 	/^\s*id\b/i,
@@ -145,13 +112,12 @@ const READ_ONLY_COMMANDS = [
 	/^\s*python(3)?\s+--version\b/i,
 	/^\s*jq\b/i,
 	/^\s*sed\s+-n\b/i,
-	/^\s*awk\b/i,
 	/^\s*rg\b/i,
 	/^\s*fd\b/i,
 	/^\s*bat\b/i,
 	/^\s*eza\b/i,
-	/^\s*curl\b/i,
 ];
+const SHELL_COMPOSITION = /[;&|`\r\n]|\$\(|<\(|>\(/;
 
 const MUTATING_COMMANDS = [
 	/\brm(dir)?\b/i,
@@ -206,45 +172,8 @@ function now(): string {
 	return new Date().toISOString();
 }
 
-function emptyState(): GoalState {
-	return {
-		version: 2,
-		goalId: "",
-		objective: "",
-		acceptanceCriteria: [],
-		risks: [],
-		phase: "idle",
-		plan: [],
-		repairCycles: 0,
-		friction: [],
-		openItems: [],
-		memoryNotes: [],
-		recalledMemories: [],
-		sessionFiles: [],
-		updatedAt: now(),
-	};
-}
-
-function normalizeState(value: unknown): GoalState {
-	const candidate = value as Partial<GoalState> | undefined;
-	if (!candidate || (candidate.version !== 1 && candidate.version !== 2)) return emptyState();
-	return {
-		...emptyState(),
-		...candidate,
-		version: 2,
-		goalId: candidate.goalId || newGoalId(),
-		acceptanceCriteria: candidate.acceptanceCriteria ?? [],
-		risks: candidate.risks ?? [],
-		plan: candidate.plan ?? [],
-		friction: candidate.friction ?? [],
-		openItems: candidate.openItems ?? [],
-		memoryNotes: candidate.memoryNotes ?? [],
-		recalledMemories: candidate.recalledMemories ?? [],
-		sessionFiles: candidate.sessionFiles ?? [],
-	};
-}
-
 function isReadOnlyCommand(command: string): boolean {
+	if (SHELL_COMPOSITION.test(command)) return false;
 	if (MUTATING_COMMANDS.some((pattern) => pattern.test(command))) return false;
 	return READ_ONLY_COMMANDS.some((pattern) => pattern.test(command));
 }
@@ -260,8 +189,13 @@ function formatState(state: GoalState): string {
 		`Goal: ${state.objective}`,
 		`Phase: ${state.phase}`,
 		`Progress: ${done}/${state.plan.length || "unplanned"}`,
+		`Review policy: ${state.reviewPolicy}`,
 		`Repair cycles: ${state.repairCycles}`,
 	];
+	const reviewStep = state.plan.find(
+		(step) => step.status === "implemented" || step.status === "verified",
+	);
+	if (reviewStep) lines.push(`Awaiting approval: ${reviewStep.id}. ${reviewStep.title}`);
 	if (state.verification) {
 		lines.push(`Last verification: ${state.verification.verdict.toUpperCase()} — ${state.verification.summary}`);
 	}
@@ -269,11 +203,11 @@ function formatState(state: GoalState): string {
 	return lines.join("\n");
 }
 
-function planText(state: GoalState): string {
+function planText(state: Pick<GoalState, "plan">): string {
 	return state.plan
 		.map(
 			(step) =>
-				`${step.id}. [${step.status === "done" ? "x" : " "}] ${step.title}\n   ${step.description}\n   Verify: ${step.verification}${step.evidence ? `\n   Evidence: ${step.evidence}` : ""}`,
+				`${step.id}. [${step.status === "done" ? "x" : step.status === "verified" ? "verified" : " "}] ${step.title}\n   ${step.description}\n   Verify: ${step.verification}${step.evidence ? `\n   Evidence: ${step.evidence}` : ""}${step.review ? `\n   Independent step review: ${step.review.verdict.toUpperCase()} — ${step.review.summary}` : ""}`,
 		)
 		.join("\n");
 }
@@ -281,7 +215,7 @@ function planText(state: GoalState): string {
 export function formatPlanForReview(
 	state: Pick<
 		GoalState,
-		"objective" | "phase" | "acceptanceCriteria" | "risks" | "plan"
+		"objective" | "phase" | "acceptanceCriteria" | "risks" | "plan" | "reviewPolicy"
 	>,
 ): string {
 	const criteria = state.acceptanceCriteria
@@ -300,6 +234,7 @@ export function formatPlanForReview(
 
 Goal: ${state.objective}
 Phase: ${state.phase}
+Review policy: ${state.reviewPolicy}
 
 Acceptance criteria (${state.acceptanceCriteria.length})
 ${criteria}
@@ -308,7 +243,7 @@ Risks and assumptions (${state.risks.length})
 ${risks}
 
 Implementation plan (${state.plan.length})
-${planText(state as GoalState)}
+${planText(state)}
 
 ${nextAction}`;
 }
@@ -337,7 +272,7 @@ export default function goalHarness(pi: ExtensionAPI): void {
 
 	function persist(ctx?: ExtensionContext): void {
 		state.updatedAt = now();
-		pi.appendEntry(STATE_ENTRY, JSON.parse(JSON.stringify(state)));
+		pi.appendEntry(STATE_ENTRY, structuredClone(state));
 		if (ctx) updateUi(ctx);
 	}
 
@@ -354,7 +289,7 @@ export default function goalHarness(pi: ExtensionAPI): void {
 	}
 
 	function serializedState(): GoalState {
-		return JSON.parse(JSON.stringify(state)) as GoalState;
+		return structuredClone(state);
 	}
 
 	function displayPlanForReview(): void {
@@ -403,10 +338,14 @@ export default function goalHarness(pi: ExtensionAPI): void {
 		const total = state.plan.length;
 		ctx.ui.setStatus("goal-harness", `goal:${state.phase}${total > 0 ? ` ${done}/${total}` : ""}`);
 
-		const lines = [`Goal: ${truncate(state.objective)}`, `Phase: ${state.phase}`];
+		const lines = [
+			`Goal: ${truncate(state.objective)}`,
+			`Phase: ${state.phase}`,
+			`Review: ${state.reviewPolicy}`,
+		];
 		if (total > 0) {
 			for (const step of state.plan) {
-				lines.push(`${step.status === "done" ? "✓" : "○"} ${step.id}. ${truncate(step.title, 76)}`);
+				lines.push(`${stepSymbol(step.status)} ${step.id}. ${truncate(step.title, 76)}`);
 			}
 		}
 		if (state.verification) {
@@ -417,7 +356,12 @@ export default function goalHarness(pi: ExtensionAPI): void {
 	}
 
 	function profileForPhase(): ModelProfile {
-		if (state.phase === "planning" || state.phase === "awaiting-execution") return config.planner;
+		if (
+			state.phase === "planning" ||
+			state.phase === "awaiting-execution" ||
+			state.phase === "awaiting-review"
+		) return config.planner;
+		if (state.phase === "verifying-step") return config.stepVerifier;
 		if (state.phase === "verifying") return config.verifier;
 		if (
 			state.phase === "executing" &&
@@ -433,9 +377,12 @@ export default function goalHarness(pi: ExtensionAPI): void {
 			case "planning":
 				return PLAN_TOOLS;
 			case "awaiting-execution":
+			case "awaiting-review":
 				return ["read", "bash", "grep", "find", "ls"];
 			case "executing":
 				return EXECUTE_TOOLS;
+			case "verifying-step":
+				return STEP_VERIFY_TOOLS;
 			case "verifying":
 				return VERIFY_TOOLS;
 			default:
@@ -507,21 +454,41 @@ export default function goalHarness(pi: ExtensionAPI): void {
 	}
 
 	function planningPrompt(extra?: string): string {
-		return `[GOAL-HARNESS PHASE:PLANNING]\nInspect the active goal and repository, then submit a structured, testable plan with submit_plan.${extra ? `\n\nRefinement requested:\n${extra}` : ""}`;
+		return `[GOAL-HARNESS PHASE:PLANNING]\nInspect the active goal and repository, then submit a structured, testable plan with submit_plan.
+Make each step a meaningful, independently reviewable milestone rather than a micro-task or a final-check-only step.${extra ? `\n\nRefinement requested:\n${extra}` : ""}`;
 	}
 
 	function executionPrompt(): string {
 		const remaining = state.plan.filter((step) => step.status !== "done");
+		const current = remaining[0];
 		const repairNote =
 			state.verification?.verdict === "fail"
 				? `\n\nRepair the verifier's defects before resubmitting:\n${state.verification.defects.map((defect) => `- ${defect}`).join("\n")}`
 				: "";
-		return `[GOAL-HARNESS PHASE:EXECUTING]\nImplement the approved plan, starting with: ${remaining[0]?.title ?? "repair the verified defects"}.
-Record completed steps with goal_progress. When implementation checks pass, submit ready_for_verification.${repairNote}`;
+		const reviewNote = state.reviewFeedback
+			? `\n\nThe user returned this step for revision:\n${state.reviewFeedback}`
+			: "";
+		if (
+			state.reviewPolicy === "per-step" &&
+			state.verification?.verdict !== "fail" &&
+			current
+		) {
+			return `[GOAL-HARNESS PHASE:EXECUTING]\nImplement only plan step ${current.id}: ${current.title}.
+Do not begin later plan steps. Run the step's declared checks, then call goal_progress complete_step with concrete evidence. The harness will pause for human review before continuing.${reviewNote}`;
+		}
+		return `[GOAL-HARNESS PHASE:EXECUTING]\nImplement the approved plan, starting with: ${current?.title ?? "repair the verified defects"}.
+Record completed steps with goal_progress. When implementation checks pass, submit ready_for_verification.${repairNote}${reviewNote}`;
 	}
 
 	function verificationPrompt(): string {
 		return "[GOAL-HARNESS PHASE:VERIFYING]\nIndependently verify the actual result against every acceptance criterion, then submit_verification with concrete evidence.";
+	}
+
+	function stepVerificationPrompt(): string {
+		const step = state.plan.find((candidate) => candidate.status === "implemented");
+		return `[GOAL-HARNESS PHASE:STEP-VERIFYING]\nIndependently verify only plan step ${step?.id ?? "unknown"}: ${step?.title ?? "unknown step"}.
+Required method: ${step?.verification ?? "Inspect the actual result and run relevant checks."}
+Do not edit files or rely on executor claims. Finish with submit_step_verification and concrete evidence.`;
 	}
 
 	async function beginGoal(objective: string, ctx: ExtensionContext): Promise<void> {
@@ -531,7 +498,7 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 				? searchMemories(objective, ctx.cwd, config.memory)
 				: [];
 		state = {
-			...emptyState(),
+			...emptyState(config.reviewPolicy),
 			goalId: newGoalId(),
 			objective,
 			phase: "planning",
@@ -548,11 +515,31 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 		pi.sendUserMessage(kickoff);
 	}
 
-	async function startExecution(ctx: ExtensionContext): Promise<void> {
+	async function confirmGoalReplacement(ctx: ExtensionContext): Promise<boolean> {
+		if (state.phase === "idle" || state.phase === "complete") return true;
+		if (!ctx.hasUI) {
+			ctx.ui.notify("An active goal already exists. Run /goal clear before replacing it.", "warning");
+			return false;
+		}
+		return ctx.ui.confirm(
+			"Replace active goal?",
+			"This discards the current structured goal state. Repository changes are not reverted.",
+		);
+	}
+
+	async function startExecution(
+		ctx: ExtensionContext,
+		reviewPolicy: ReviewPolicy = state.reviewPolicy,
+	): Promise<void> {
 		if (state.plan.length === 0) {
 			ctx.ui.notify("No approved plan exists. Run /plan first.", "warning");
 			return;
 		}
+		if (state.phase !== "awaiting-execution") {
+			ctx.ui.notify(`The plan cannot start from phase ${state.phase}.`, "warning");
+			return;
+		}
+		state.reviewPolicy = reviewPolicy;
 		state.phase = "executing";
 		state.blockedReason = undefined;
 		pendingAction = undefined;
@@ -571,6 +558,85 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 		if (allowFreshSession && await moveToFreshSession(ctx, kickoff, "verify")) return;
 		await applyPhase(ctx);
 		pi.sendUserMessage(kickoff, { deliverAs: "followUp" });
+	}
+
+	async function startStepVerification(ctx: ExtensionContext, allowFreshSession = true): Promise<void> {
+		const step = state.plan.find((candidate) => candidate.status === "implemented");
+		if (!step) {
+			ctx.ui.notify("No implemented step is waiting for verification.", "warning");
+			return;
+		}
+		state.phase = "verifying-step";
+		pendingAction = undefined;
+		persist(ctx);
+		const kickoff = stepVerificationPrompt();
+		if (allowFreshSession && await moveToFreshSession(ctx, kickoff, `verify-step-${step.id}`)) return;
+		await applyPhase(ctx);
+		pi.sendUserMessage(kickoff, { deliverAs: "followUp" });
+	}
+
+	async function approveReviewedStep(ctx: ExtensionContext): Promise<void> {
+		if (state.phase !== "awaiting-review") {
+			ctx.ui.notify("No completed step is awaiting human approval.", "warning");
+			return;
+		}
+		const step = state.plan.find(
+			(candidate) => candidate.status === "implemented" || candidate.status === "verified",
+		);
+		if (!step?.evidence?.trim()) {
+			ctx.ui.notify("The current step has no concrete validation evidence.", "warning");
+			return;
+		}
+		if (step.review && step.review.verdict !== "pass") {
+			ctx.ui.notify("The current step's independent review has not passed.", "warning");
+			return;
+		}
+		step.status = "done";
+		state.stepRepairCycles = 0;
+		state.reviewFeedback = undefined;
+		state.blockedReason = undefined;
+
+		const next = state.plan.find((candidate) => candidate.status !== "done");
+		if (next) {
+			state.phase = "awaiting-execution";
+			persist(ctx);
+			await startExecution(ctx, "per-step");
+			return;
+		}
+
+		persist(ctx);
+		if (config.autoVerify) {
+			await startVerification(ctx);
+			return;
+		}
+		state.phase = "verifying";
+		persist(ctx);
+		await applyPhase(ctx);
+		ctx.ui.notify("All steps are approved. Run /verify for final goal verification.", "info");
+	}
+
+	async function reviseReviewedStep(feedback: string, ctx: ExtensionContext): Promise<void> {
+		if (state.phase !== "awaiting-review") {
+			ctx.ui.notify("No completed step is awaiting revision.", "warning");
+			return;
+		}
+		const step = state.plan.find(
+			(candidate) => candidate.status === "implemented" || candidate.status === "verified",
+		);
+		if (!step) {
+			ctx.ui.notify("No reviewed step was found.", "warning");
+			return;
+		}
+		if (!feedback.trim()) {
+			ctx.ui.notify("Usage: /goal revise <feedback for the executor>", "warning");
+			return;
+		}
+		step.status = "pending";
+		state.reviewFeedback = feedback.trim().slice(0, 4000);
+		state.phase = "awaiting-execution";
+		state.blockedReason = undefined;
+		persist(ctx);
+		await startExecution(ctx, "per-step");
 	}
 
 	pi.registerTool({
@@ -688,15 +754,21 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 		label: "Submit plan",
 		description: "Submit the structured implementation plan for the active goal. This ends the planning phase.",
 		parameters: Type.Object({
-			acceptanceCriteria: Type.Array(Type.String(), { minItems: 1 }),
-			risks: Type.Array(Type.String()),
+			acceptanceCriteria: Type.Array(
+				Type.String({ minLength: 1, maxLength: 1000 }),
+				{ minItems: 1, maxItems: 20 },
+			),
+			risks: Type.Array(
+				Type.String({ minLength: 1, maxLength: 1000 }),
+				{ maxItems: 20 },
+			),
 			steps: Type.Array(
 				Type.Object({
-					title: Type.String(),
-					description: Type.String(),
-					verification: Type.String(),
+					title: Type.String({ minLength: 1, maxLength: 300 }),
+					description: Type.String({ minLength: 1, maxLength: 2000 }),
+					verification: Type.String({ minLength: 1, maxLength: 1500 }),
 				}),
-				{ minItems: 1 },
+				{ minItems: 1, maxItems: 20 },
 			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -706,14 +778,31 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 					details: { accepted: false },
 				};
 			}
+			if (
+				params.acceptanceCriteria.some((criterion) => !criterion.trim()) ||
+				params.steps.some(
+					(step) =>
+						!step.title.trim() ||
+						!step.description.trim() ||
+						!step.verification.trim(),
+				)
+			) {
+				return {
+					content: [{
+						type: "text" as const,
+						text: "Plan rejected: criteria, step titles, descriptions, and verification methods must be non-empty.",
+					}],
+					details: { accepted: false },
+				};
+			}
 
-			state.acceptanceCriteria = [...params.acceptanceCriteria];
-			state.risks = [...params.risks];
+			state.acceptanceCriteria = params.acceptanceCriteria.map((criterion) => criterion.trim());
+			state.risks = params.risks.map((risk) => risk.trim()).filter(Boolean);
 			state.plan = params.steps.map((step, index) => ({
 				id: index + 1,
-				title: step.title,
-				description: step.description,
-				verification: step.verification,
+				title: step.title.trim(),
+				description: step.description.trim(),
+				verification: step.verification.trim(),
 				status: "pending",
 			}));
 			state.phase = "awaiting-execution";
@@ -748,7 +837,7 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 				Type.Literal("ready_for_verification"),
 			]),
 			stepId: Type.Optional(Type.Number()),
-			evidence: Type.Optional(Type.String()),
+			evidence: Type.Optional(Type.String({ maxLength: 8000 })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			if (state.phase !== "executing") {
@@ -772,12 +861,43 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 						details: { accepted: false },
 					};
 				}
-				step.status = "done";
+				if (step.status !== "pending") {
+					return {
+						content: [{ type: "text" as const, text: `Step ${step.id} is already ${step.status}.` }],
+						details: { accepted: false },
+					};
+				}
+				if (
+					state.reviewPolicy === "per-step" &&
+					state.plan.find((candidate) => candidate.status !== "done")?.id !== step.id
+				) {
+					return {
+						content: [{
+							type: "text" as const,
+							text: "Per-step review requires completing the next unapproved step in order.",
+						}],
+						details: { accepted: false },
+					};
+				}
+				step.status = state.reviewPolicy === "per-step" ? "implemented" : "done";
 				step.evidence = params.evidence.trim();
+				step.review = undefined;
+				state.reviewFeedback = undefined;
+				if (state.reviewPolicy === "per-step") {
+					state.phase = "awaiting-review";
+					pendingAction = "announce-step-review";
+				}
 				persist(ctx);
 				return {
-					content: [{ type: "text" as const, text: `Completed step ${step.id}: ${step.title}` }],
+					content: [{
+						type: "text" as const,
+						text:
+							state.reviewPolicy === "per-step"
+								? `Step ${step.id} is ready for human review: ${step.title}`
+								: `Completed step ${step.id}: ${step.title}`,
+					}],
 					details: { accepted: true, step },
+					terminate: state.reviewPolicy === "per-step",
 				};
 			}
 
@@ -790,6 +910,16 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 					content: [{ type: "text" as const, text: `Goal needs attention: ${state.blockedReason}` }],
 					details: { accepted: true, blockedReason: state.blockedReason },
 					terminate: true,
+				};
+			}
+
+			if (state.reviewPolicy === "per-step" && state.verification?.verdict !== "fail") {
+				return {
+					content: [{
+						type: "text" as const,
+						text: "Per-step review advances through executor validation evidence and human approval; do not submit the whole plan from execution.",
+					}],
+					details: { accepted: false },
 				};
 			}
 
@@ -818,22 +948,99 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 	});
 
 	pi.registerTool({
+		name: "submit_step_verification",
+		label: "Submit step verification",
+		description: "Submit an independent verdict for the one implemented step awaiting review.",
+		parameters: VERIFICATION_PARAMETERS,
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (state.phase !== "verifying-step") {
+				return {
+					content: [{ type: "text" as const, text: "Step verification rejected: no step is awaiting verification." }],
+					details: { accepted: false },
+				};
+			}
+			const implementedSteps = state.plan.filter((candidate) => candidate.status === "implemented");
+			const step = implementedSteps[0];
+			if (implementedSteps.length !== 1 || !step) {
+				return {
+					content: [{
+						type: "text" as const,
+						text: `Step verification rejected: expected exactly one implemented step, found ${implementedSteps.length}.`,
+					}],
+					details: { accepted: false },
+				};
+			}
+			const validationError = verificationValidationError(
+				params.verdict,
+				params.summary,
+				params.checks,
+				params.defects,
+			);
+			if (validationError) {
+				return {
+					content: [{ type: "text" as const, text: validationError }],
+					details: { accepted: false },
+				};
+			}
+
+			const review: VerificationResult = {
+				verdict: params.verdict,
+				summary: params.summary.trim(),
+				checks: params.checks,
+				defects: params.defects,
+				at: now(),
+			};
+			step.review = review;
+
+			if (review.verdict === "pass") {
+				step.status = "verified";
+				state.phase = "awaiting-review";
+				state.blockedReason = undefined;
+				pendingAction = "announce-step-review";
+				persist(ctx);
+				return {
+					content: [{
+						type: "text" as const,
+						text: `STEP VERIFIED: ${step.id}. ${step.title}\n${review.summary}`,
+					}],
+					details: { accepted: true, stepId: step.id, review },
+					terminate: true,
+				};
+			}
+
+			step.status = "pending";
+			state.friction.push(...review.defects);
+			state.stepRepairCycles += 1;
+			if (state.stepRepairCycles > config.maxRepairCycles) {
+				state.phase = "needs-attention";
+				state.blockedReason = `Step ${step.id} failed verification after ${config.maxRepairCycles} repair cycles. ${review.summary}`;
+				pendingAction = "announce-needs-attention";
+			} else {
+				state.phase = "executing";
+				state.reviewFeedback = review.defects.join("\n");
+				state.blockedReason = undefined;
+				pendingAction = "start-step-repair";
+			}
+			persist(ctx);
+			return {
+				content: [{
+					type: "text" as const,
+					text:
+						state.phase === "executing"
+							? `Step verification failed. Starting repair ${state.stepRepairCycles}/${config.maxRepairCycles}.`
+							: `Step verification failed. Goal needs attention after ${config.maxRepairCycles} repairs.`,
+				}],
+				details: { accepted: true, stepId: step.id, review, repairCycles: state.stepRepairCycles },
+				terminate: true,
+			};
+		},
+	});
+
+	pi.registerTool({
 		name: "submit_verification",
 		label: "Submit verification",
 		description: "Submit the independent verification verdict and supporting checks for the active goal.",
-		parameters: Type.Object({
-			verdict: Type.Union([Type.Literal("pass"), Type.Literal("fail")]),
-			summary: Type.String(),
-			checks: Type.Array(
-				Type.Object({
-					name: Type.String(),
-					status: Type.Union([Type.Literal("pass"), Type.Literal("fail"), Type.Literal("not_run")]),
-					evidence: Type.String(),
-				}),
-				{ minItems: 1 },
-			),
-			defects: Type.Array(Type.String()),
-		}),
+		parameters: VERIFICATION_PARAMETERS,
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			if (state.phase !== "verifying") {
 				return {
@@ -841,22 +1048,25 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 					details: { accepted: false },
 				};
 			}
-
-			const hasFailedCheck = params.checks.some((check) => check.status !== "pass");
-			if (params.verdict === "pass" && (hasFailedCheck || params.defects.length > 0)) {
+			if (state.plan.some((step) => step.status !== "done")) {
 				return {
-					content: [
-						{
-							type: "text" as const,
-							text: "PASS rejected: every check must pass and the defects list must be empty.",
-						},
-					],
+					content: [{
+						type: "text" as const,
+						text: "Verification rejected: every plan step must be completed and approved first.",
+					}],
 					details: { accepted: false },
 				};
 			}
-			if (params.verdict === "fail" && params.defects.length === 0) {
+
+			const validationError = verificationValidationError(
+				params.verdict,
+				params.summary,
+				params.checks,
+				params.defects,
+			);
+			if (validationError) {
 				return {
-					content: [{ type: "text" as const, text: "FAIL rejected: provide at least one actionable defect." }],
+					content: [{ type: "text" as const, text: validationError }],
 					details: { accepted: false },
 				};
 			}
@@ -936,13 +1146,21 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 	});
 
 	pi.registerCommand("goal", {
-		description: "Start or manage a persistent goal: /goal <objective> | status | pause | resume | clear",
+		description: "Start or manage a persistent goal: /goal <objective> | status | approve | revise <feedback> | pause | resume | clear",
 		handler: async (args, ctx) => {
 			const input = args.trim();
 			const command = input.toLowerCase();
 
 			if (!input || command === "status") {
 				ctx.ui.notify(formatState(state), "info");
+				return;
+			}
+			if (command === "approve") {
+				await approveReviewedStep(ctx);
+				return;
+			}
+			if (command === "revise" || command.startsWith("revise ")) {
+				await reviseReviewedStep(input.slice("revise".length).trim(), ctx);
 				return;
 			}
 			if (command === "clear") {
@@ -959,6 +1177,7 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 					ctx.ui.notify("There is no active goal to pause.", "warning");
 					return;
 				}
+				state.pausedFrom = state.phase;
 				state.phase = "paused";
 				pendingAction = undefined;
 				persist(ctx);
@@ -972,9 +1191,35 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 					ctx.ui.notify("The goal is not paused or waiting for attention.", "warning");
 					return;
 				}
-				if (state.plan.length === 0) {
+				const resumePhase =
+					state.phase === "paused" && state.pausedFrom && state.pausedFrom !== "paused"
+						? state.pausedFrom
+						: state.plan.length === 0
+							? "planning"
+							: "executing";
+				state.pausedFrom = undefined;
+				state.blockedReason = undefined;
+
+				if (resumePhase === "awaiting-execution" || resumePhase === "awaiting-review") {
+					state.phase = resumePhase;
+					persist(ctx);
+					await applyPhase(ctx);
+					ctx.ui.notify(
+						resumePhase === "awaiting-review"
+							? "Goal resumed at the human review checkpoint."
+							: "Goal resumed with its plan awaiting execution approval.",
+						"info",
+					);
+				} else if (resumePhase === "verifying-step") {
+					state.phase = "verifying-step";
+					persist(ctx);
+					await startStepVerification(ctx);
+				} else if (resumePhase === "verifying") {
+					state.phase = "verifying";
+					persist(ctx);
+					await startVerification(ctx);
+				} else if (resumePhase === "planning" || state.plan.length === 0) {
 					state.phase = "planning";
-					state.blockedReason = undefined;
 					persist(ctx);
 					const kickoff = planningPrompt("Resume planning the preserved goal.");
 					if (await moveToFreshSession(ctx, kickoff, "plan-resume")) return;
@@ -982,7 +1227,6 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 					pi.sendUserMessage(kickoff);
 				} else {
 					state.phase = "executing";
-					state.blockedReason = undefined;
 					persist(ctx);
 					const kickoff = executionPrompt();
 					if (await moveToFreshSession(ctx, kickoff, "execute-resume")) return;
@@ -992,7 +1236,7 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 				return;
 			}
 
-			await beginGoal(input, ctx);
+			if (await confirmGoalReplacement(ctx)) await beginGoal(input, ctx);
 		},
 	});
 
@@ -1004,8 +1248,12 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 	pi.registerCommand("goal-plan", {
 		description: "Show the complete goal plan, acceptance criteria, risks, and verification methods",
 		handler: async (_args, ctx) => {
-			if (!state.objective || state.plan.length === 0) {
-				ctx.ui.notify("There is no structured goal plan to show. Run /goal <objective> first.", "warning");
+			if (!state.objective) {
+				ctx.ui.notify("There is no active goal. Run /goal <objective> first.", "warning");
+				return;
+			}
+			if (state.plan.length === 0) {
+				ctx.ui.notify("The active goal does not have a submitted plan yet. Finish planning, then run /goal-plan again.", "warning");
 				return;
 			}
 			displayPlanForReview();
@@ -1013,23 +1261,17 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 	});
 
 	pi.registerCommand("harness-setup", {
-		description: "Configure model roles: /harness-setup [status | openai | current]",
+		description: `Configure model roles: /harness-setup [status | ${HARNESS_SETUP_PRESETS.map((preset) => preset.id).join(" | ")}]`,
 		handler: async (args, ctx) => {
 			let choice = args.trim().toLowerCase();
 			if (!choice && ctx.hasUI) {
 				const selected = await ctx.ui.select("Pi Goal Harness setup", [
-					"Recommended OpenAI Codex preset",
-					"Use the current model for every phase",
+					...HARNESS_SETUP_PRESETS.map((preset) => preset.label),
 					"Show current configuration",
 				]);
-				choice =
-					selected === "Recommended OpenAI Codex preset"
-						? "openai"
-						: selected === "Use the current model for every phase"
-							? "current"
-							: selected === "Show current configuration"
-								? "status"
-								: "";
+				choice = selected === "Show current configuration"
+					? "status"
+					: HARNESS_SETUP_PRESETS.find((preset) => preset.label === selected)?.id ?? "";
 			}
 
 			if (!choice || choice === "status") {
@@ -1037,37 +1279,33 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 				return;
 			}
 
-			if (choice === "openai") {
-				const missing = [
-					OPENAI_CODEX_PRESET.planner.model,
-					OPENAI_CODEX_PRESET.executor.model,
-					OPENAI_CODEX_PRESET.fallbackExecutor.model,
-					OPENAI_CODEX_PRESET.verifier.model,
-				].filter((model, index, models) =>
-					models.indexOf(model) === index &&
-					!ctx.modelRegistry.find(OPENAI_CODEX_PRESET.provider, model)
+			const preset = HARNESS_SETUP_PRESETS.find((candidate) => candidate.id === choice);
+			if (!preset) {
+				ctx.ui.notify(
+					`Usage: /harness-setup [status | ${HARNESS_SETUP_PRESETS.map((candidate) => candidate.id).join(" | ")}]`,
+					"warning",
 				);
-				if (missing.length > 0) {
-					ctx.ui.notify(
-						`OpenAI preset not saved; model(s) unavailable: ${missing.join(", ")}. Authenticate or use /harness-setup current.`,
-						"warning",
-					);
-					return;
-				}
-				config = JSON.parse(JSON.stringify(OPENAI_CODEX_PRESET));
-			} else if (choice === "current") {
-				const current = ctx.model
-					? { provider: ctx.model.provider, id: ctx.model.id }
-					: sessionDefaultModel;
-				if (!current) {
-					ctx.ui.notify("No current model is available. Select/authenticate a Pi model first.", "warning");
-					return;
-				}
-				config = currentModelConfig(current.provider, current.id);
-			} else {
-				ctx.ui.notify("Usage: /harness-setup [status | openai | current]", "warning");
 				return;
 			}
+			const current = ctx.model
+				? { provider: ctx.model.provider, id: ctx.model.id }
+				: sessionDefaultModel;
+			const proposed = preset.create(current);
+			if (!proposed) {
+				ctx.ui.notify(`Preset "${preset.label}" requires a current model.`, "warning");
+				return;
+			}
+			const missing = configuredModels(proposed).filter(
+				(model) => !ctx.modelRegistry.find(model.provider, model.id),
+			);
+			if (missing.length > 0) {
+				ctx.ui.notify(
+					`Preset not saved; unavailable model(s): ${missing.map((model) => `${model.provider}/${model.id}`).join(", ")}.`,
+					"warning",
+				);
+				return;
+			}
+			config = proposed;
 
 			const target = writeConfig(config);
 			fallbackNoticeShown = false;
@@ -1097,15 +1335,27 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 	});
 
 	pi.registerCommand("plan", {
-		description: "Start or restart read-only planning for the active goal",
+		description: "Start planning, or explicitly replace a progressed plan with /plan --replace",
 		handler: async (args, ctx) => {
-			const objective = args.trim() || state.objective;
+			const argument = args.trim();
+			const replace = argument === "--replace";
+			const objective = replace ? state.objective : argument || state.objective;
 			if (!objective) {
 				ctx.ui.notify("Usage: /goal <objective> or /plan <objective>", "warning");
 				return;
 			}
-			if (args.trim()) {
-				await beginGoal(objective, ctx);
+			if (argument && !replace) {
+				if (await confirmGoalReplacement(ctx)) await beginGoal(objective, ctx);
+				return;
+			}
+			const hasProgress = state.plan.some(
+				(step) => step.status !== "pending" || Boolean(step.evidence) || Boolean(step.review),
+			);
+			if (hasProgress && !replace) {
+				ctx.ui.notify(
+					"The plan has progress or review evidence. Use /plan --replace to discard that structured history.",
+					"warning",
+				);
 				return;
 			}
 			state.phase = "planning";
@@ -1125,15 +1375,43 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 	});
 
 	pi.registerCommand("execute", {
-		description: "Approve and execute the current structured plan",
-		handler: async (_args, ctx) => startExecution(ctx),
+		description: "Approve and execute the plan: /execute [final | per-step]",
+		handler: async (args, ctx) => {
+			const requested = args.trim().toLowerCase();
+			if (requested && requested !== "final" && requested !== "per-step") {
+				ctx.ui.notify("Usage: /execute [final | per-step]", "warning");
+				return;
+			}
+			const reviewPolicy: ReviewPolicy =
+				requested === "per-step" || requested === "final"
+					? requested
+					: config.reviewPolicy;
+			await startExecution(ctx, reviewPolicy);
+		},
 	});
 
 	pi.registerCommand("verify", {
-		description: "Run independent verification for the active goal",
+		description: "Run optional step verification at a checkpoint, or final goal verification",
 		handler: async (_args, ctx) => {
 			if (!state.objective || state.plan.length === 0) {
 				ctx.ui.notify("There is no planned goal to verify.", "warning");
+				return;
+			}
+			if (state.phase === "verifying-step") {
+				await startStepVerification(ctx);
+				return;
+			}
+			if (state.phase === "awaiting-review") {
+				const implemented = state.plan.find((step) => step.status === "implemented");
+				if (!implemented) {
+					ctx.ui.notify("The current step has already passed independent verification.", "info");
+					return;
+				}
+				await startStepVerification(ctx);
+				return;
+			}
+			if (state.plan.some((step) => step.status !== "done")) {
+				ctx.ui.notify("Final verification requires every plan step to be completed and approved.", "warning");
 				return;
 			}
 			await startVerification(ctx);
@@ -1148,23 +1426,39 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 			state.phase === "complete"
 		) return;
 
-		if ((state.phase === "planning" || state.phase === "verifying") && (event.toolName === "edit" || event.toolName === "write")) {
+		if (
+			(state.phase === "planning" ||
+				state.phase === "verifying" ||
+				state.phase === "verifying-step" ||
+				state.phase === "awaiting-review") &&
+			(event.toolName === "edit" || event.toolName === "write")
+		) {
 			return { block: true, reason: `${state.phase} mode does not permit file edits.` };
 		}
 
 		if (event.toolName !== "bash") return;
 		const command = typeof event.input.command === "string" ? event.input.command : "";
 
-		if (state.phase === "planning" && !isReadOnlyCommand(command)) {
+		if (
+			(state.phase === "planning" ||
+				state.phase === "awaiting-execution" ||
+				state.phase === "awaiting-review") &&
+			!isReadOnlyCommand(command)
+		) {
 			return {
 				block: true,
-				reason: `Planning mode allows only read-only commands. Blocked: ${command}`,
+				reason: `${state.phase} allows only read-only commands. Blocked: ${command}`,
 			};
 		}
-		if (state.phase === "verifying" && MUTATING_COMMANDS.some((pattern) => pattern.test(command))) {
+		if (
+			(state.phase === "verifying" ||
+				state.phase === "verifying-step" ||
+				state.phase === "awaiting-review") &&
+			MUTATING_COMMANDS.some((pattern) => pattern.test(command))
+		) {
 			return {
 				block: true,
-				reason: `Verification must be independent and non-editing. Blocked: ${command}`,
+				reason: `${state.phase} must remain non-editing. Blocked: ${command}`,
 			};
 		}
 
@@ -1185,6 +1479,7 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 			case "planning":
 				phaseInstructions = `You are the PLANNER. Use read-only exploration only. Do not edit, install, commit, or change external state.
 Resolve uncertainty by inspecting the repository. State material assumptions and risks.
+Make plan steps meaningful, independently reviewable milestones; do not create micro-steps or a separate step whose only purpose is final regression checking.
 Use recalled memory only as leads; confirm it against current files. Use memory_search for targeted history and memory_note only for genuinely reusable discoveries.
 Your final action must be submit_plan with a structured, testable plan.`;
 				break;
@@ -1192,10 +1487,24 @@ Your final action must be submit_plan with a structured, testable plan.`;
 				phaseInstructions = "The structured plan is awaiting user approval. Do not begin implementation.";
 				break;
 			case "executing":
-				phaseInstructions = `You are the EXECUTOR. Continue until the approved plan is implemented or a real blocker requires user input.
+				phaseInstructions =
+					state.reviewPolicy === "per-step" && state.verification?.verdict !== "fail"
+					? `You are the EXECUTOR. Implement only the first unapproved plan step shown in the phase context, or report a real blocker.
+Do not begin later steps. Use goal_progress complete_step with concrete evidence when this step's checks pass.
+Use memory_search only when prior work is relevant. Record concise durable discoveries with memory_note; they are promoted only after final goal verification passes.`
+					: `You are the EXECUTOR. Continue until the approved plan is implemented or a real blocker requires user input.
 Use goal_progress to record evidence for completed steps. Do not self-certify the goal.
 Use memory_search only when prior work is relevant. Record concise durable discoveries with memory_note; they are promoted only after verification passes.
 After all implementation work and checks are complete, submit ready_for_verification.`;
+				break;
+			case "verifying-step":
+				phaseInstructions = `You are the independent STEP VERIFIER. Verify only the implemented plan step identified in the phase context.
+Do not edit files. Treat executor evidence as untrusted and inspect the actual repository.
+Your final action must be submit_step_verification. PASS requires concrete passing evidence for the step's verification method.`;
+				break;
+			case "awaiting-review":
+				phaseInstructions = `The completed step is awaiting human approval. Discuss its implementation, executor validation evidence, and tradeoffs using read-only inspection.
+Do not edit or advance the plan. The user can run /goal approve, /goal revise <feedback>, or /verify for an optional independent step review.`;
 				break;
 			case "verifying":
 				phaseInstructions = `You are the independent VERIFIER. Treat prior completion claims as untrusted.
@@ -1230,6 +1539,8 @@ ${buildPhaseContext(state, config.memory)}`,
 				? "[GOAL-HARNESS PHASE:PLANNING]"
 				: state.phase === "executing"
 					? "[GOAL-HARNESS PHASE:EXECUTING]"
+				: state.phase === "verifying-step"
+					? "[GOAL-HARNESS PHASE:STEP-VERIFYING]"
 					: state.phase === "verifying" || state.phase === "complete"
 						? "[GOAL-HARNESS PHASE:VERIFYING]"
 						: undefined;
@@ -1273,10 +1584,33 @@ ${buildPhaseContext(state, config.memory)}`,
 			await startVerification(ctx, false);
 			return;
 		}
+		if (action === "start-step-repair") {
+			const kickoff = executionPrompt();
+			await applyPhase(ctx);
+			pi.sendUserMessage(kickoff, { deliverAs: "followUp" });
+			return;
+		}
 		if (action === "start-repair") {
 			const kickoff = executionPrompt();
 			await applyPhase(ctx);
 			pi.sendUserMessage(kickoff, { deliverAs: "followUp" });
+			return;
+		}
+		if (action === "announce-step-review") {
+			await restoreSessionDefaults(ctx);
+			await applyPhase(ctx);
+			updateUi(ctx);
+			const step = state.plan.find(
+				(candidate) => candidate.status === "implemented" || candidate.status === "verified",
+			);
+			pi.sendMessage(
+				{
+					customType: "goal-harness-step-review",
+					content: `Step ready for review\n\n${step ? `${step.id}. ${step.title}\n${step.review?.summary ?? step.evidence ?? ""}` : formatState(state)}\n\nDiscuss the result, then run /goal approve or /goal revise <feedback>. Run /verify first when an independent step review is warranted.`,
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
 			return;
 		}
 		if (action === "announce-complete") {

@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Add `final` and `per-step` review policies.
+- Pause after each step with validation evidence for a human approval or
+  revision gate, with optional independent `/verify`.
+- Add a separately configurable fast step-verifier role while retaining the
+  stronger final verifier.
+- Preserve review checkpoints across pause and resume.
+- Require explicit confirmation or `--replace` before discarding active goal
+  and progressed-plan state.
+- Enforce read-only discussion before plan and step approval.
+- Require non-empty verification summaries and concrete check evidence.
+- Replace vendor-specific setup branching with a data-driven preset registry.
+- Require Pi coding-agent and TUI hosts at version 0.82.1 or newer.
+- Clarify authentication-only clean migration and `/goal-plan` pre-plan
+  feedback.
+
 ## 0.1.2
 
 - Render full plans through Pi's registered TUI entry API.

@@ -31,8 +31,19 @@ node eval/rpc-goal-runner.mjs \
   --session-dir <sessions> \
   --memory on \
   --memory-root <memory-root> \
-  --fresh-sessions on
+  --fresh-sessions on \
+  --review-policy final \
+  --step-verification executor-evidence \
+  --extension /absolute/path/to/extensions/goal-harness/index.ts
 ```
+
+Use `--review-policy per-step` to exercise human-review checkpoints with
+executor validation evidence. Add `--step-verification independent` to invoke
+the optional independent verifier before the runner approves each checkpoint.
+Final independent goal verification remains mandatory in both cases.
+
+`--extension` disables discovered extensions and loads that source file
+directly, which is useful for evaluating an unreleased checkout.
 
 Then run the checks independently:
 

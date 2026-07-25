@@ -20,6 +20,11 @@ The deterministic suite covers:
 - bounded injection;
 - pruning of completed execution evidence;
 - verifier memory isolation;
+- per-step validation evidence and human approval gates;
+- optional independent step verification;
+- revision feedback and pause/resume at a review checkpoint;
+- final-verifier repair after per-step execution;
+- read-only enforcement before plan and step approval;
 - namespaced paths and user-only file permissions.
 
 The synthetic legacy executor packet measured 5,671 characters. The isolated
@@ -63,6 +68,29 @@ The final context-boundary revision passed:
 
 Usage was 43,476 uncached input, 5,381 output, 45,568 cache-read, and 94,425
 total tokens across 22 calls, with reported cost of $0.278966.
+
+## Per-step review evaluation
+
+The same memory-backed fixture was run through two `per-step` variants. Both
+passed the public suite, external hidden contract, adversarial-memory check,
+and final Sol verification with zero repairs.
+
+| Review flow | Total tokens | API calls | Reported cost | Hidden contract |
+|---|---:|---:|---:|---:|
+| Final-only reference | 94,425 | 22 | $0.278966 | PASS |
+| Per-step plus independent verification at every checkpoint | 220,712 | 42 | $0.608280 | PASS |
+| Per-step executor evidence plus human approval | 143,765 | 31 | $0.445892 | PASS |
+
+The lean per-step flow added 52.3% total tokens, 40.9% calls, and 59.8%
+reported cost relative to the final-only reference. Automatically buying an
+independent model review at every checkpoint added 133.7% tokens and 118.0%
+cost. Consequently, per-step mode now pauses with declared-check evidence and
+keeps independent `/verify` optional at a checkpoint; independent final
+verification remains mandatory.
+
+These are individual model runs rather than statistically powered averages.
+They demonstrate the direction and magnitude of the interaction-cost tradeoff,
+not a universal multiplier.
 
 ## Packaged-install acceptance
 

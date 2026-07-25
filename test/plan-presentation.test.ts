@@ -11,6 +11,7 @@ test("formats the complete structured plan for approval", () => {
 	const content = formatPlanForReview({
 		objective: "Build a local-only todo app",
 		phase: "awaiting-execution",
+		reviewPolicy: "per-step",
 		acceptanceCriteria: [
 			"Todos persist locally across reloads.",
 			"Keyboard flows and automated tests pass.",
@@ -30,6 +31,7 @@ test("formats the complete structured plan for approval", () => {
 	assert.match(content, /Acceptance criteria \(2\)/);
 	assert.match(content, /Todos persist locally across reloads/);
 	assert.match(content, /Risks and assumptions \(1\)/);
+	assert.match(content, /Review policy: per-step/);
 	assert.match(content, /Visual quality is subjective/);
 	assert.match(content, /Implement typed state transitions/);
 	assert.match(content, /Verify: Run domain and persistence tests/);
@@ -113,7 +115,15 @@ test("submitting and reopening a plan emits a rendered TUI-only entry", async ()
 		isIdle: () => true,
 	};
 
+	await commands.get("goal-plan")?.handler("", ctx);
+	assert.match(notifications.at(-1)?.message ?? "", /There is no active goal/);
+	notifications.length = 0;
+
 	await commands.get("goal")?.handler("Build a local-only todo app", ctx);
+	await commands.get("goal-plan")?.handler("", ctx);
+	assert.match(notifications.at(-1)?.message ?? "", /does not have a submitted plan yet/);
+	notifications.length = 0;
+
 	const result = await tools.get("submit_plan").execute(
 		"plan-call",
 		{

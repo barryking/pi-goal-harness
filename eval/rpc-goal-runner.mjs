@@ -18,7 +18,10 @@ function sleep(ms) {
 }
 
 class PiRpc {
-	constructor(cwd, sessionDir, env) {
+	constructor(cwd, sessionDir, env, extension) {
+		const extensionArgs = extension
+			? ["--no-extensions", "--extension", resolve(extension)]
+			: [];
 		this.child = spawn(
 			"pi",
 			[
@@ -28,6 +31,7 @@ class PiRpc {
 				"openai-codex/gpt-5.6-sol:medium",
 				"--session-dir",
 				sessionDir,
+				...extensionArgs,
 			],
 			{ cwd, env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] },
 		);
@@ -169,8 +173,9 @@ mkdirSync(sessionDir, { recursive: true });
 const rpc = new PiRpc(cwd, sessionDir, {
 	PI_HARNESS_MEMORY_ENABLED: args.memory === "off" ? "0" : "1",
 	PI_HARNESS_FRESH_SESSIONS: args["fresh-sessions"] === "off" ? "0" : "1",
+	PI_HARNESS_REVIEW_POLICY: args["review-policy"] ?? "final",
 	PI_HARNESS_MEMORY_ROOT: resolve(args["memory-root"] ?? `${output}.memory`),
-});
+}, args.extension);
 
 const startedAt = new Date().toISOString();
 let result;
@@ -180,8 +185,38 @@ try {
 	if (planned.phase !== "awaiting-execution") {
 		throw new Error(`Planning stopped in ${planned.phase}: ${planned.blockedReason ?? "unknown"}`);
 	}
-	await rpc.send("prompt", { message: "/execute" }, 20 * 60_000);
-	const finalState = await rpc.waitForPhase(["complete", "needs-attention"], 20 * 60_000);
+	const reviewPolicy = args["review-policy"] === "per-step" ? "per-step" : "final";
+	const stepVerification = args["step-verification"] === "independent"
+		? "independent"
+		: "executor-evidence";
+	await rpc.send("prompt", { message: `/execute ${reviewPolicy}` }, 20 * 60_000);
+	let finalState;
+	if (reviewPolicy === "per-step") {
+		for (;;) {
+			const checkpoint = await rpc.waitForPhase(
+				["awaiting-review", "complete", "needs-attention"],
+				20 * 60_000,
+			);
+			if (checkpoint.phase !== "awaiting-review") {
+				finalState = checkpoint;
+				break;
+			}
+			if (stepVerification === "independent") {
+				await rpc.send("prompt", { message: "/verify" }, 20 * 60_000);
+				const reviewed = await rpc.waitForPhase(
+					["awaiting-review", "needs-attention"],
+					20 * 60_000,
+				);
+				if (reviewed.phase === "needs-attention") {
+					finalState = reviewed;
+					break;
+				}
+			}
+			await rpc.send("prompt", { message: "/goal approve" }, 20 * 60_000);
+		}
+	} else {
+		finalState = await rpc.waitForPhase(["complete", "needs-attention"], 20 * 60_000);
+	}
 	result = {
 		status: finalState.phase === "complete" ? "pass" : "fail",
 		startedAt,
@@ -190,6 +225,8 @@ try {
 		objective: args.objective,
 		memory: args.memory === "off" ? "off" : "on",
 		freshSessions: args["fresh-sessions"] === "off" ? "off" : "on",
+		reviewPolicy,
+		stepVerification,
 		goal: finalState,
 		usage: aggregateUsage(finalState.sessionFiles),
 		rpcErrors: rpc.events.filter((event) => event.type === "error"),
