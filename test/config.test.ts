@@ -20,6 +20,7 @@ test("uses the documented OpenAI preset when no user config exists", () => {
 	const config = loadConfig();
 	assert.deepEqual(config, OPENAI_CODEX_PRESET);
 	assert.equal(config.reviewPolicy, "final");
+	assert.equal(config.memory.storeColdEvidence, false);
 	assert.equal(configPath(), join(root, "config.json"));
 });
 

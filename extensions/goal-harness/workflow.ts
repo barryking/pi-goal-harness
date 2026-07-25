@@ -2,7 +2,6 @@ import type { ReviewPolicy } from "./config.ts";
 import {
 	newGoalId,
 	type MemoryCandidate,
-	type MemoryNote,
 } from "./memory.ts";
 
 export const GOAL_STATE_ENTRY = "goal-harness-state";
@@ -62,7 +61,6 @@ export interface GoalState {
 	stepRepairCycles: number;
 	friction: string[];
 	openItems: string[];
-	memoryNotes: MemoryNote[];
 	recalledMemories: MemoryCandidate[];
 	sessionFiles: string[];
 	startCommit?: string;
@@ -161,7 +159,6 @@ export function emptyState(reviewPolicy: ReviewPolicy = "final"): GoalState {
 		stepRepairCycles: 0,
 		friction: [],
 		openItems: [],
-		memoryNotes: [],
 		recalledMemories: [],
 		sessionFiles: [],
 		updatedAt: new Date().toISOString(),
@@ -188,7 +185,6 @@ export function normalizeState(value: unknown): GoalState {
 		stepRepairCycles: nonNegativeInteger(value.stepRepairCycles),
 		friction: stringArray(value.friction),
 		openItems: stringArray(value.openItems),
-		memoryNotes: Array.isArray(value.memoryNotes) ? value.memoryNotes as MemoryNote[] : [],
 		recalledMemories: Array.isArray(value.recalledMemories)
 			? value.recalledMemories as MemoryCandidate[]
 			: [],

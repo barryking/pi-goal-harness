@@ -3,13 +3,18 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { OPENAI_CODEX_PRESET } from "../extensions/goal-harness/config.ts";
 import goalHarness from "../extensions/goal-harness/index.ts";
+import { searchMemories } from "../extensions/goal-harness/memory.ts";
 
-test("per-step review supports optional independent checks and requires human approval", async () => {
+test("per-step review gates progress and promotes final-verifier findings", async () => {
 	process.env.PI_GOAL_HARNESS_HOME = mkdtempSync(
 		join(tmpdir(), "pi-goal-harness-review-policy-"),
 	);
-	process.env.PI_HARNESS_MEMORY_ENABLED = "0";
+	process.env.PI_HARNESS_MEMORY_ENABLED = "1";
+	process.env.PI_HARNESS_MEMORY_ROOT = mkdtempSync(
+		join(tmpdir(), "pi-goal-harness-review-memory-"),
+	);
 
 	const commands = new Map<string, { handler: (args: string, ctx: any) => unknown }>();
 	const tools = new Map<string, any>();
@@ -61,6 +66,7 @@ test("per-step review supports optional independent checks and requires human ap
 	};
 
 	goalHarness(pi as never);
+	assert.ok(!registeredTools.includes("memory_note"));
 
 	const model = { provider: "openai-codex", id: "gpt-5.6-sol" };
 	const ctx = {
@@ -231,6 +237,7 @@ test("per-step review supports optional independent checks and requires human ap
 			summary: "Integration needs one repair.",
 			checks: [{ name: "integrated", status: "fail", evidence: "Observed mismatch." }],
 			defects: ["Repair the integration mismatch."],
+			findings: [],
 		},
 		new AbortController().signal,
 		() => {},
@@ -249,18 +256,33 @@ test("per-step review supports optional independent checks and requires human ap
 	assert.equal(repaired.details.accepted, true);
 	await runAgentEnd();
 
-	await tools.get("submit_verification").execute(
+	const finalResult = await tools.get("submit_verification").execute(
 		"verify-final-pass",
 		{
 			verdict: "pass",
 			summary: "The integrated goal passed.",
 			checks: [{ name: "integrated", status: "pass", evidence: "Observed pass." }],
 			defects: [],
+			findings: [{
+				kind: "discovery",
+				text: "The two milestones must share the same integration boundary.",
+				evidence: "The integrated check passed only after repairing the boundary.",
+				path: "src/integration.ts",
+				line: 12,
+			}],
 		},
 		new AbortController().signal,
 		() => {},
 		ctx,
 	);
 	assert.equal(latestState().phase, "complete");
+	assert.equal(finalResult.details.memory.inserted, true);
+	const recalled = searchMemories(
+		"milestones integration boundary",
+		ctx.cwd,
+		OPENAI_CODEX_PRESET.memory,
+	);
+	assert.equal(recalled.length, 1);
+	assert.match(recalled[0].learnings[0], /integrated check passed/i);
 	assert.ok(notifications.some((message) => /resumed at the human review checkpoint/i.test(message)));
 });

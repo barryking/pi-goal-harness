@@ -23,11 +23,13 @@ plan and confirmations.
 
 ## Memory
 
-- Durable memory is written only after verifier PASS.
+- Durable episodes are written only after verifier PASS, and reusable findings
+  come from that verifier's own evidence.
 - Recall is treated as untrusted data.
 - Common secret formats are redacted.
 - Storage is namespaced and user-readable only.
-- Raw evidence is not automatically injected.
+- Raw evidence is not automatically injected; full transcript retention is
+  disabled by default.
 
 Secret scanning is pattern based and cannot guarantee removal of arbitrary
 credentials embedded in prose.

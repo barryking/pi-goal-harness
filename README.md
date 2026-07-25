@@ -30,11 +30,15 @@ Pi Goal Harness turns an outcome into a persistent, testable workflow:
 
 Pi 0.82 or newer and Node.js 22.19 or newer are recommended.
 
-From GitHub:
+From the latest GitHub `main`:
 
 ```text
-pi install git:github.com/barryking/pi-goal-harness@v0.1.2
+pi install git:github.com/barryking/pi-goal-harness
 ```
+
+Release tags are recommended for reproducible team installations. Version
+`0.2.0` groups the checkpoint, recovery, and verifier-grounded memory features;
+its tag should be used once the release is published.
 
 From a local checkout:
 
@@ -104,7 +108,9 @@ Useful commands:
 /plan --replace         Explicitly discard a progressed plan
 /execute [final|per-step] Approve the plan with a review policy
 /verify                 Independently verify a checkpoint or the final goal
-/memory-status          List recent verified memories
+/memory-status          Show memory health and recent active/retired episodes
+/memory retire <id>     Exclude an obsolete episode from recall
+/memory restore <id>    Restore a retired episode
 /harness-setup          Choose a model preset
 /harness-setup status   Show effective configuration
 ```
@@ -263,7 +269,7 @@ Use this hierarchy:
 | Detailed architecture, domain rules, and decisions | Versioned repository docs, linked from `AGENTS.md` |
 | Product direction and future milestones | `PROJECT_GOAL.md` or `ROADMAP.md` |
 | Personal defaults that apply to every repository | `~/.pi/agent/AGENTS.md` |
-| Facts learned from successfully completed work | Verified harness memory, generated automatically |
+| Distilled experience from successfully completed work | Verified harness episodic memory |
 
 Pi loads repository and global `AGENTS.md` files into every fresh harness
 phase. Keep them concise because repeated instructions consume context in
@@ -298,11 +304,10 @@ the goal instead of changing the durable project rules:
 /goal Add CSV export using the existing TypeScript and React stack. Keep domain logic framework-independent, follow docs/architecture.md, and do not add runtime dependencies.
 ```
 
-If a verified task discovers a reusable fact, the planner or executor can
-stage it as a memory note. That note is promoted only after final verification.
-Important decisions should still be committed to the repository; future
-memory is bounded, relevance-ranked, and deliberately treated as untrusted
-evidence.
+If a verified task produces a reusable lesson, the independent final verifier
+can include it as an evidence-backed episode finding. Important decisions
+should still be committed to the repository; future memory is bounded,
+relevance-ranked, and deliberately treated as untrusted evidence.
 
 ### When direction changes
 
@@ -335,26 +340,39 @@ prompts, other extensions, or authentication.
 
 ## Memory with a trust boundary
 
-Memory is local, bounded, and advisory:
+The four CoALA memory types have distinct homes:
 
-1. Starting `/goal` searches verified episodes using the new objective and
-   ranks results from the current repository first.
+| Type | Placement |
+|---|---|
+| Working | Bounded current phase packet |
+| Semantic | `AGENTS.md`, architecture docs, ADRs, and other versioned project knowledge |
+| Procedural | Pi skills and the executable harness workflow |
+| Episodic | Distilled, independently verified prior-task episodes in local SQLite |
+
+The harness owns working-memory assembly and episodic recall. It does not copy
+semantic or procedural sources of truth into its database.
+
+Episodic memory is local, bounded, and advisory:
+
+1. Starting `/goal` searches active verified episodes using the new objective
+   and ranks results from the current repository first.
 2. Up to four relevant results and 6,000 characters are recalled by default;
    planning and execution may run narrower searches when needed.
-3. Recall contains outcomes, reusable notes, relevant files, and provenance.
-   It does not replay the previous planning or execution conversation.
+3. Recall contains verified outcomes, evidence-backed findings, open items,
+   relevant files, commit provenance, and repository ancestry. It never
+   replays the previous planning or execution conversation.
 4. Current code, `AGENTS.md`, tests, the goal, and acceptance criteria outrank
    memory. Recall is labelled as untrusted evidence, never instructions.
-5. Planning and execution can stage concise repository, code, workflow,
-   friction, or open-item notes. Checkpoint approval does not persist them.
-6. The final verifier receives no recalled memory or executor completion
-   claims. Only its `PASS` promotes the completed episode and staged notes into
-   durable memory for later goals.
-7. Common secret patterns are redacted, content hashes deduplicate episodes,
-   and full redacted transcripts remain cold evidence that is never
-   auto-injected.
+5. The final verifier receives no recalled memory or executor completion
+   claims. Only findings derived from its own inspection and checks become
+   reusable learnings; an empty list is valid.
+6. `/memory retire <id>` makes an obsolete episode ineligible for recall
+   without deleting its audit record; `/memory restore <id>` reverses that.
+7. Common secret patterns are redacted and content hashes deduplicate
+   episodes. Full redacted transcript retention is optional and disabled by
+   default.
 
-Memory therefore helps a later related goal rediscover what previously worked;
+Episodic memory can help a later related goal rediscover what previously worked;
 it does not guarantee a preferred stack, enforce architecture, remember every
 discussion, or replace version-controlled project documentation. Run
 `/memory-status` to see recent promoted episodes.
@@ -366,7 +384,7 @@ Data is namespaced under:
 ├── config.json
 └── memory/
     ├── coala.sqlite3
-    └── evidence/<goal-id>/
+    └── evidence/<goal-id>/  # only when cold evidence is enabled
 ```
 
 Directories are `0700`; configuration, database, manifests, and transcript
@@ -409,6 +427,13 @@ These are fixture results, not a promise of universal savings. In the paired
 run, uncached input and cost fell while total processed tokens rose slightly
 because cache reads increased. See [the evaluation methodology](docs/evaluation.md).
 
+The verifier-grounded 0.2.0 regression also exercised the full formation →
+promotion → fresh-checkout recall path. With only the organically produced
+episode eligible, the fixture again passed its hidden contract with zero
+repairs. That single sample used 4.7% more total tokens and cost 7.3% more than
+its no-memory control, so the evidence supports quality transfer on this
+fixture—not a general token-saving claim.
+
 The later per-step benchmark also passed the hidden contract and final
 verification. Pausing for human review after three milestones used 143,765
 tokens and 31 calls—52.3% more tokens than the 94,425-token final-only
@@ -439,15 +464,18 @@ access. See [security and limitations](docs/security.md).
 
 The memory architecture is inspired by
 [CoALA: Cognitive Architectures for Language Agents](https://arxiv.org/abs/2309.02427),
-especially its separation of working and long-term memory. The original
-experiment was also prompted by
-[this memory-system talk](https://www.youtube.com/watch?v=BacJ6sEhqMo).
+especially its separation of working, semantic, procedural, and episodic
+memory. [This memory-system talk](https://www.youtube.com/watch?v=BacJ6sEhqMo)
+prompted the practical placement used here: bounded context for working memory,
+project files for semantic memory, progressively disclosed skills/workflows for
+procedural memory, and distilled cross-session experience for episodic memory.
 
 Public implementation notes from
 [Entire's checkpoint architecture](https://github.com/entireio/cli/blob/ec5d9a7610039703017e4fa8c34a070ce47dc3b3/docs/architecture/sessions-and-checkpoints.md#L196-L255)
-informed the general ideas of provenance and progressive disclosure. Pi Goal
-Harness is an independent implementation and has no Entire runtime, service,
-SDK, storage-format, or installation dependency.
+informed the general ideas of durable episode provenance, stable identifiers,
+and linking evidence to repository state. Pi Goal Harness is an independent
+implementation and has no Entire runtime, service, SDK, storage-format, or
+installation dependency.
 
 ## License
 

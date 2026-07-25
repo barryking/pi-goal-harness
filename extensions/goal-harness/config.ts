@@ -57,7 +57,7 @@ export const OPENAI_CODEX_PRESET: HarnessConfig = {
 		maxResults: 4,
 		maxInjectedChars: 6000,
 		maxResultChars: 900,
-		storeColdEvidence: true,
+		storeColdEvidence: false,
 	},
 };
 

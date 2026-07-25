@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-07-25",
+  "piVersion": "0.82.1",
+  "harnessVersion": "0.2.0",
+  "preset": "Sol planning, Luna execution, Sol final verification",
+  "fixture": "eval/fixtures/window",
+  "objective": "Harden normalizeWindow according to the project validation conventions, add comprehensive tests, and document the behavior. Keep the package dependency-free.",
+  "conditions": [
+    {
+      "name": "no-memory control",
+      "memory": "off",
+      "harnessVerdict": "pass",
+      "publicTests": "8/8 pass",
+      "externalHiddenContract": "fail",
+      "repairCycles": 0,
+      "usage": {
+        "uncachedInput": 54222,
+        "cacheRead": 36864,
+        "output": 5888,
+        "totalTokens": 96974,
+        "reportedCost": 0.318639,
+        "apiCalls": 20
+      }
+    },
+    {
+      "name": "seeded retrieval regression",
+      "memory": "one relevant seed plus one stale adversarial seed",
+      "harnessVerdict": "pass",
+      "publicTests": "8/8 pass",
+      "externalHiddenContract": "pass",
+      "repairCycles": 0,
+      "verifierFindingsPromoted": 2,
+      "usage": {
+        "uncachedInput": 59048,
+        "cacheRead": 38912,
+        "output": 6900,
+        "totalTokens": 104860,
+        "reportedCost": 0.368318,
+        "apiCalls": 20
+      }
+    },
+    {
+      "name": "organic-only lifecycle",
+      "memory": "only the episode produced by the preceding independent verifier; synthetic seeds retired",
+      "recalledProvenance": "current",
+      "harnessVerdict": "pass",
+      "publicTests": "8/8 pass",
+      "externalHiddenContract": "pass",
+      "repairCycles": 0,
+      "verifierFindingsPromoted": 2,
+      "usage": {
+        "uncachedInput": 61511,
+        "cacheRead": 34304,
+        "output": 5763,
+        "totalTokens": 101578,
+        "reportedCost": 0.341771,
+        "apiCalls": 21
+      }
+    }
+  ],
+  "organicVersusControl": {
+    "uncachedInput": "+13.4%",
+    "cacheRead": "-6.9%",
+    "output": "-2.1%",
+    "totalTokens": "+4.7%",
+    "reportedCost": "+7.3%",
+    "apiCalls": "+5.0%"
+  },
+  "limitations": [
+    "Each condition is one model sample.",
+    "The organic follow-up repeats the same fixture and objective in a fresh checkout.",
+    "This establishes end-to-end formation, promotion, retrieval, and reuse on one fixture, not general memory efficacy."
+  ]
+}

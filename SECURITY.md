@@ -11,14 +11,14 @@ sandbox when the repository or task requires a stronger boundary.
 
 ## Memory and secrets
 
-Verified memory and redacted transcript evidence are stored locally under
-`~/.pi/agent/pi-goal-harness/` by default. Common API keys, bearer tokens,
-password assignments, private keys, and credential-bearing database URLs are
-redacted before persistence.
+Verified episodic memory is stored locally under
+`~/.pi/agent/pi-goal-harness/` by default. Full redacted transcript evidence is
+opt-in. Common API keys, bearer tokens, password assignments, private keys, and
+credential-bearing database URLs are redacted before persistence.
 
 Pattern-based redaction cannot guarantee removal of every possible secret.
 Do not place credentials in goals, prompts, source files, test output, or
-memory notes.
+verification findings.
 
 ## Reporting a vulnerability
 

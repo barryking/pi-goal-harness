@@ -55,3 +55,10 @@ git diff --check
 ```
 
 Do not commit temporary authentication or raw session evidence.
+
+## Recorded result
+
+The sanitized summary from the verifier-grounded formation and organic-reuse
+regression is retained in
+[`results/2026-07-25-verifier-grounded-memory.json`](results/2026-07-25-verifier-grounded-memory.json).
+Raw sessions remain ephemeral and are not committed.
