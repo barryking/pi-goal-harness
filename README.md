@@ -47,6 +47,11 @@ pi install npm:pi-goal-harness
 Pi packages execute with the permissions of the user running Pi. Review the
 source before installing any extension.
 
+Existing Pi installations do not normally need to be reset. If you are
+replacing a hand-maintained harness and want a clean migration, preserve the
+whole Pi agent directory before carrying only authentication into the new
+installation. See [clean migration and rollback](docs/configuration.md#clean-migration-and-rollback).
+
 ## Quick start
 
 Open Pi in the project you want to change:
