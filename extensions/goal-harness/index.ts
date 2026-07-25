@@ -272,6 +272,41 @@ function planText(state: GoalState): string {
 		.join("\n");
 }
 
+export function formatPlanForReview(
+	state: Pick<
+		GoalState,
+		"objective" | "phase" | "acceptanceCriteria" | "risks" | "plan"
+	>,
+): string {
+	const criteria = state.acceptanceCriteria
+		.map((criterion, index) => `${index + 1}. ${criterion}`)
+		.join("\n");
+	const risks =
+		state.risks.length > 0
+			? state.risks.map((risk, index) => `${index + 1}. ${risk}`).join("\n")
+			: "None identified.";
+	const nextAction =
+		state.phase === "awaiting-execution"
+			? "Review the criteria, risks, implementation details, and verification methods. Run /execute to approve this plan, or /plan to replace it."
+			: "Run /plan to replace this plan. Use /goal-status for concise progress.";
+
+	return `Goal plan
+
+Goal: ${state.objective}
+Phase: ${state.phase}
+
+Acceptance criteria (${state.acceptanceCriteria.length})
+${criteria}
+
+Risks and assumptions (${state.risks.length})
+${risks}
+
+Implementation plan (${state.plan.length})
+${planText(state as GoalState)}
+
+${nextAction}`;
+}
+
 export default function goalHarness(pi: ExtensionAPI): void {
 	let config = loadConfig();
 	let state = emptyState();
@@ -663,12 +698,21 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 			pendingAction = undefined;
 			persist(ctx);
 			await applyPhase(ctx);
+			const fullPlan = formatPlanForReview(state);
+			pi.sendMessage(
+				{
+					customType: "goal-harness-plan",
+					content: fullPlan,
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
 
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `Plan ready with ${state.plan.length} steps and ${state.acceptanceCriteria.length} acceptance criteria.\n\n${planText(state)}\n\nReview it, then run /execute. Run /plan to replace it.`,
+						text: `Plan ready with ${state.plan.length} steps and ${state.acceptanceCriteria.length} acceptance criteria. The complete approval plan is displayed in the conversation. Review it, then run /execute, or run /plan to replace it.`,
 					},
 				],
 				details: { accepted: true, plan: state.plan, acceptanceCriteria: state.acceptanceCriteria },
@@ -939,6 +983,24 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 	pi.registerCommand("goal-status", {
 		description: "Show the active goal, phase, progress, and latest verification",
 		handler: async (_args, ctx) => ctx.ui.notify(formatState(state), "info"),
+	});
+
+	pi.registerCommand("goal-plan", {
+		description: "Show the complete goal plan, acceptance criteria, risks, and verification methods",
+		handler: async (_args, ctx) => {
+			if (!state.objective || state.plan.length === 0) {
+				ctx.ui.notify("There is no structured goal plan to show. Run /goal <objective> first.", "warning");
+				return;
+			}
+			pi.sendMessage(
+				{
+					customType: "goal-harness-plan",
+					content: formatPlanForReview(state),
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+		},
 	});
 
 	pi.registerCommand("harness-setup", {

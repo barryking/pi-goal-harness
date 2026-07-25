@@ -29,7 +29,7 @@ Pi 0.82 or newer and Node.js 22.19 or newer are recommended.
 From GitHub:
 
 ```text
-pi install git:github.com/barryking/pi-goal-harness@v0.1.0
+pi install git:github.com/barryking/pi-goal-harness@v0.1.1
 ```
 
 From a local checkout:
@@ -76,6 +76,7 @@ Useful commands:
 ```text
 /goal <objective>       Start a persistent goal
 /goal status            Show phase, progress, and verification
+/goal-plan              Show the full approval plan and verification methods
 /plan                   Replace the current plan
 /execute                Approve the stored plan
 /verify                 Re-run independent verification

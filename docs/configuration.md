@@ -27,7 +27,7 @@ For a recoverable clean migration:
 5. Install a pinned release:
 
    ```text
-   pi install git:github.com/barryking/pi-goal-harness@v0.1.0
+   pi install git:github.com/barryking/pi-goal-harness@v0.1.1
    ```
 
 6. Confirm `pi list` shows the pinned package, then start Pi and run
