@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (unreleased)
 
 - Add `final` and `per-step` review policies.
 - Pause after each step with validation evidence for a human approval or
@@ -21,6 +21,17 @@
   case-insensitive filesystem spellings.
 - Render goal status as a persistent TUI-only entry rather than a transient
   notification.
+- Align the four CoALA memory types with Pi-native working context,
+  `AGENTS.md`/project documentation, skills/workflows, and distilled episodic
+  recall instead of treating every type as SQLite content.
+- Promote only evidence-backed findings produced by the independent final
+  verifier; planner and executor claims no longer become durable learnings.
+- Add recoverable `/memory retire` and `/memory restore` lifecycle controls,
+  repository ancestry labels, and visible memory-health diagnostics.
+- Make full redacted transcript retention opt-in and harden evidence directory
+  naming and duplicate writes.
+- Document the original one-fixture benchmark as a retrieval experiment and
+  define a multi-condition organic lifecycle evaluation.
 
 ## 0.1.2
 

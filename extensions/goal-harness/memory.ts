@@ -55,12 +55,15 @@ export interface MemoryConfig {
 	storeColdEvidence: boolean;
 }
 
-export interface MemoryNote {
-	kind: "repo" | "code" | "workflow" | "friction" | "open_item";
+export interface VerifiedFinding {
+	kind: "decision" | "discovery" | "pitfall";
 	text: string;
+	evidence: string;
 	path?: string;
 	line?: number;
 }
+
+export type MemoryProvenance = "current" | "ancestor" | "diverged" | "external" | "unknown";
 
 export interface MemoryCandidate {
 	id: string;
@@ -75,6 +78,8 @@ export interface MemoryCandidate {
 	commitSha?: string;
 	verifiedAt: string;
 	score?: number;
+	status?: "verified" | "retired";
+	provenance?: MemoryProvenance;
 }
 
 export interface EpisodeInput {
@@ -82,7 +87,7 @@ export interface EpisodeInput {
 	cwd: string;
 	objective: string;
 	outcome: string;
-	notes: MemoryNote[];
+	findings: VerifiedFinding[];
 	friction: string[];
 	openItems: string[];
 	files: string[];
@@ -99,7 +104,16 @@ interface MemoryPaths {
 	evidence: string;
 }
 
+export interface MemoryHealth {
+	ok: boolean;
+	database: string;
+	verified: number;
+	retired: number;
+	lastError?: string;
+}
+
 const REDACTED = "[REDACTED]";
+let lastMemoryError: string | undefined;
 const SECRET_PATTERNS: RegExp[] = [
 	/\b(?:sk|rk|pk|sess|pat|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{12,}\b/g,
 	/\bBearer\s+[A-Za-z0-9._~+/-]{12,}=*\b/gi,
@@ -194,6 +208,10 @@ function safeJson(value: unknown): string {
 	return redactMemoryText(JSON.stringify(value));
 }
 
+function recordMemoryError(error: unknown): void {
+	lastMemoryError = error instanceof Error ? error.message : String(error);
+}
+
 function git(cwd: string, args: string[]): string | undefined {
 	try {
 		return execFileSync("git", ["-C", cwd, ...args], {
@@ -203,6 +221,18 @@ function git(cwd: string, args: string[]): string | undefined {
 		}).trim() || undefined;
 	} catch {
 		return undefined;
+	}
+}
+
+function gitSucceeds(cwd: string, args: string[]): boolean {
+	try {
+		execFileSync("git", ["-C", cwd, ...args], {
+			stdio: "ignore",
+			timeout: 3000,
+		});
+		return true;
+	} catch {
+		return false;
 	}
 }
 
@@ -254,7 +284,20 @@ function toCandidate(row: Record<string, unknown>): MemoryCandidate {
 		commitSha: row.end_commit ? String(row.end_commit) : undefined,
 		verifiedAt: String(row.verified_at),
 		score: row.rank === undefined ? undefined : Number(row.rank),
+		status: row.status === "retired" ? "retired" : "verified",
 	};
+}
+
+function provenanceFor(
+	candidate: MemoryCandidate,
+	repo: { root: string; key: string; commit?: string },
+): MemoryProvenance {
+	if (candidate.repoKey !== repo.key) return "external";
+	if (!candidate.commitSha || !repo.commit) return "unknown";
+	if (candidate.commitSha === repo.commit) return "current";
+	return gitSucceeds(repo.root, ["merge-base", "--is-ancestor", candidate.commitSha, repo.commit])
+		? "ancestor"
+		: "diverged";
 }
 
 export function searchMemories(
@@ -266,8 +309,9 @@ export function searchMemories(
 	const terms = searchTerms(query);
 	if (terms.length === 0) return [];
 
-	const db = openDatabase();
+	let db: SQLiteDatabase | undefined;
 	try {
+		db = openDatabase();
 		const repo = repositoryIdentity(cwd);
 		const ftsQuery = terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(" OR ");
 		const statement = db.prepare(`
@@ -278,31 +322,111 @@ export function searchMemories(
 			ORDER BY CASE WHEN e.repo_key = ? THEN 0 ELSE 1 END, rank, e.verified_at DESC
 			LIMIT ?
 		`);
-		return statement
+		const candidates = statement
 			.all(ftsQuery, repo.key, Math.max(1, Math.min(config.maxResults, 10)))
-			.map((row) => toCandidate(row as Record<string, unknown>));
-	} catch {
+			.map((row) => {
+				const candidate = toCandidate(row as Record<string, unknown>);
+				candidate.provenance = provenanceFor(candidate, repo);
+				return candidate;
+			});
+		lastMemoryError = undefined;
+		return candidates;
+	} catch (error) {
+		recordMemoryError(error);
 		return [];
 	} finally {
-		db.close();
+		db?.close();
 	}
 }
 
-export function recentMemories(cwd: string, limit = 10): MemoryCandidate[] {
-	const db = openDatabase();
+export function recentMemories(
+	cwd: string,
+	limit = 10,
+	includeRetired = false,
+): MemoryCandidate[] {
+	let db: SQLiteDatabase | undefined;
 	try {
+		db = openDatabase();
 		const repo = repositoryIdentity(cwd);
-		return db
-			.prepare(`
+		const candidates = db
+			.prepare(includeRetired ? `
+				SELECT * FROM episodes
+				WHERE status IN ('verified', 'retired')
+				ORDER BY CASE WHEN repo_key = ? THEN 0 ELSE 1 END, verified_at DESC
+				LIMIT ?
+			` : `
 				SELECT * FROM episodes
 				WHERE status = 'verified'
 				ORDER BY CASE WHEN repo_key = ? THEN 0 ELSE 1 END, verified_at DESC
 				LIMIT ?
 			`)
 			.all(repo.key, Math.max(1, Math.min(limit, 50)))
-			.map((row) => toCandidate(row as Record<string, unknown>));
+			.map((row) => {
+				const candidate = toCandidate(row as Record<string, unknown>);
+				candidate.provenance = provenanceFor(candidate, repo);
+				return candidate;
+			});
+		lastMemoryError = undefined;
+		return candidates;
+	} catch (error) {
+		recordMemoryError(error);
+		return [];
 	} finally {
-		db.close();
+		db?.close();
+	}
+}
+
+export function memoryHealth(): MemoryHealth {
+	const target = paths();
+	try {
+		const db = openDatabase();
+		try {
+			const counts = db.prepare(`
+				SELECT
+					SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END) AS verified,
+					SUM(CASE WHEN status = 'retired' THEN 1 ELSE 0 END) AS retired
+				FROM episodes
+			`).get() as { verified?: number; retired?: number } | undefined;
+			return {
+				ok: !lastMemoryError,
+				database: target.database,
+				verified: Number(counts?.verified ?? 0),
+				retired: Number(counts?.retired ?? 0),
+				lastError: lastMemoryError,
+			};
+		} finally {
+			db.close();
+		}
+	} catch (error) {
+		recordMemoryError(error);
+		return {
+			ok: false,
+			database: target.database,
+			verified: 0,
+			retired: 0,
+			lastError: lastMemoryError,
+		};
+	}
+}
+
+export function setMemoryStatus(
+	id: string,
+	status: "verified" | "retired",
+): boolean {
+	if (!/^mem-[a-f0-9]{12}$/.test(id)) return false;
+	let db: SQLiteDatabase | undefined;
+	try {
+		db = openDatabase();
+		const result = db
+			.prepare("UPDATE episodes SET status = ? WHERE id = ?")
+			.run(status, id);
+		lastMemoryError = undefined;
+		return Number(result.changes) > 0;
+	} catch (error) {
+		recordMemoryError(error);
+		return false;
+	} finally {
+		db?.close();
 	}
 }
 
@@ -317,13 +441,16 @@ export function formatMemoryPacket(
 	let used = header.length;
 	for (const memory of candidates) {
 		const learnings = memory.learnings.slice(0, 4).join("; ");
+		const openItems = memory.openItems.slice(0, 3).join("; ");
 		const files = memory.files.slice(0, 8).join(", ");
 		const entry = [
 			`- [${memory.id}] ${safeText(memory.intent, config.maxResultChars)}`,
 			`  Outcome: ${safeText(memory.outcome, config.maxResultChars)}`,
 			learnings ? `  Learnings: ${safeText(learnings, config.maxResultChars)}` : "",
+			openItems ? `  Open items: ${safeText(openItems, config.maxResultChars)}` : "",
 			files ? `  Files: ${safeText(files, config.maxResultChars)}` : "",
 			memory.commitSha ? `  Provenance: ${memory.repoKey}@${memory.commitSha.slice(0, 12)}` : `  Provenance: ${memory.repoKey}`,
+			memory.provenance ? `  Repository state: ${memory.provenance}` : "",
 		].filter(Boolean).join("\n");
 		if (used + entry.length > config.maxInjectedChars) break;
 		lines.push(entry);
@@ -334,7 +461,10 @@ export function formatMemoryPacket(
 
 function writeColdEvidence(input: EpisodeInput): string | undefined {
 	const target = ensureDirectories();
-	const goalDir = join(target.evidence, input.goalId);
+	const safeGoalId = /^[A-Za-z0-9._-]{1,128}$/.test(input.goalId)
+		? input.goalId
+		: createHash("sha256").update(input.goalId).digest("hex").slice(0, 24);
+	const goalDir = join(target.evidence, safeGoalId);
 	mkdirSync(goalDir, { recursive: true, mode: 0o700 });
 
 	const manifests: Array<{ source: string; stored: string; sha256: string }> = [];
@@ -375,26 +505,19 @@ export function storeVerifiedEpisode(
 	config: MemoryConfig,
 ): { id: string; inserted: boolean; evidencePath?: string } {
 	const repo = repositoryIdentity(input.cwd);
-	const notes = input.notes.map((note) => ({
-		...note,
-		text: safeText(note.text),
-		path: note.path ? safeText(note.path, 1000) : undefined,
+	const findings = input.findings.map((finding) => ({
+		...finding,
+		text: safeText(finding.text),
+		evidence: safeText(finding.evidence),
+		path: finding.path ? safeText(finding.path, 1000) : undefined,
 	}));
-	const learnings = notes
-		.filter((note) => note.kind === "repo" || note.kind === "code" || note.kind === "workflow")
-		.map((note) =>
-			note.kind === "code" && note.path
-				? `${note.path}${note.line ? `:${note.line}` : ""}: ${note.text}`
-				: `${note.kind}: ${note.text}`,
-		);
-	const friction = [
-		...input.friction,
-		...notes.filter((note) => note.kind === "friction").map((note) => note.text),
-	].map((item) => safeText(item));
-	const openItems = [
-		...input.openItems,
-		...notes.filter((note) => note.kind === "open_item").map((note) => note.text),
-	].map((item) => safeText(item));
+	const learnings = findings.map((finding) =>
+		finding.path
+			? `${finding.kind}: ${finding.path}${finding.line ? `:${finding.line}` : ""}: ${finding.text} Evidence: ${finding.evidence}`
+			: `${finding.kind}: ${finding.text} Evidence: ${finding.evidence}`,
+	);
+	const friction = input.friction.map((item) => safeText(item));
+	const openItems = input.openItems.map((item) => safeText(item));
 	const objective = safeText(input.objective);
 	const outcome = safeText(input.outcome);
 	const files = [...new Set(input.files.map((item) => safeText(item, 1000)).filter(Boolean))];
@@ -409,10 +532,23 @@ export function storeVerifiedEpisode(
 	});
 	const contentHash = createHash("sha256").update(hashInput).digest("hex");
 	const id = `mem-${contentHash.slice(0, 12)}`;
-	const evidencePath = config.storeColdEvidence ? writeColdEvidence({ ...input, notes }) : undefined;
-
-	const db = openDatabase();
+	let db: SQLiteDatabase | undefined;
 	try {
+		db = openDatabase();
+		const existing = db
+			.prepare("SELECT id, evidence_path FROM episodes WHERE content_hash = ?")
+			.get(contentHash) as { id: string; evidence_path?: string } | undefined;
+		if (existing) {
+			return {
+				id: existing.id,
+				inserted: false,
+				evidencePath: existing.evidence_path,
+			};
+		}
+		const evidencePath = config.storeColdEvidence
+			? writeColdEvidence({ ...input, findings })
+			: undefined;
+		db.exec("BEGIN IMMEDIATE");
 		const result = db
 			.prepare(`
 				INSERT OR IGNORE INTO episodes (
@@ -459,25 +595,42 @@ export function storeVerifiedEpisode(
 				files.join("\n"),
 			);
 		}
+		db.exec("COMMIT");
+		lastMemoryError = undefined;
 		return { id, inserted: result.changes > 0, evidencePath };
+	} catch (error) {
+		try {
+			db?.exec("ROLLBACK");
+		} catch {
+			// The transaction may not have started.
+		}
+		recordMemoryError(error);
+		throw error;
 	} finally {
-		db.close();
+		db?.close();
 	}
 }
 
 export function readMemoryEvidence(id: string): string | undefined {
 	if (!/^mem-[a-f0-9]{12}$/.test(id)) return undefined;
-	const db = openDatabase();
+	let db: SQLiteDatabase | undefined;
 	try {
+		db = openDatabase();
 		const row = db.prepare("SELECT evidence_path FROM episodes WHERE id = ?").get(id) as
 			| { evidence_path?: string }
 			| undefined;
-		if (!row?.evidence_path || !existsSync(row.evidence_path)) return undefined;
-		return readFileSync(row.evidence_path, "utf8");
-	} catch {
+		if (!row?.evidence_path || !existsSync(row.evidence_path)) {
+			lastMemoryError = undefined;
+			return undefined;
+		}
+		const evidence = readFileSync(row.evidence_path, "utf8");
+		lastMemoryError = undefined;
+		return evidence;
+	} catch (error) {
+		recordMemoryError(error);
 		return undefined;
 	} finally {
-		db.close();
+		db?.close();
 	}
 }
 

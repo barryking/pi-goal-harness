@@ -19,13 +19,14 @@ import { buildPhaseContext } from "./context.ts";
 import {
 	changedFiles,
 	formatMemoryPacket,
+	memoryHealth,
 	newGoalId,
 	readMemoryEvidence,
 	recentMemories,
 	repositoryIdentity,
 	searchMemories,
+	setMemoryStatus,
 	storeVerifiedEpisode,
-	type MemoryNote,
 } from "./memory.ts";
 import {
 	findRecoverableGoals,
@@ -59,33 +60,55 @@ type PendingAction =
 
 const PLAN_VIEW_ENTRY = "goal-harness-plan";
 const STATUS_VIEW_ENTRY = "goal-harness-status";
-const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", "memory_search", "memory_evidence", "memory_note", "submit_plan"];
-const EXECUTE_TOOLS = ["read", "bash", "edit", "write", "memory_search", "memory_evidence", "memory_note", "goal_progress"];
+const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", "memory_search", "memory_evidence", "submit_plan"];
+const EXECUTE_TOOLS = ["read", "bash", "edit", "write", "memory_search", "memory_evidence", "goal_progress"];
 const VERIFY_TOOLS = ["read", "bash", "grep", "find", "ls", "submit_verification"];
 const STEP_VERIFY_TOOLS = ["read", "bash", "grep", "find", "ls", "submit_step_verification"];
 const HARNESS_TOOLS = new Set([
 	"memory_search",
 	"memory_evidence",
-	"memory_note",
 	"submit_plan",
 	"goal_progress",
 	"submit_verification",
 	"submit_step_verification",
 ]);
-const VERIFICATION_PARAMETERS = Type.Object({
-	verdict: Type.Union([Type.Literal("pass"), Type.Literal("fail")]),
+const VERDICT_PARAMETER = Type.Union([Type.Literal("pass"), Type.Literal("fail")]);
+const CHECKS_PARAMETER = Type.Array(
+	Type.Object({
+		name: Type.String({ minLength: 1, maxLength: 300 }),
+		status: Type.Union([Type.Literal("pass"), Type.Literal("fail"), Type.Literal("not_run")]),
+		evidence: Type.String({ minLength: 1, maxLength: 4000 }),
+	}),
+	{ minItems: 1, maxItems: 50 },
+);
+const DEFECTS_PARAMETER = Type.Array(
+	Type.String({ minLength: 1, maxLength: 2000 }),
+	{ maxItems: 50 },
+);
+const STEP_VERIFICATION_PARAMETERS = Type.Object({
+	verdict: VERDICT_PARAMETER,
 	summary: Type.String({ minLength: 1, maxLength: 4000 }),
-	checks: Type.Array(
+	checks: CHECKS_PARAMETER,
+	defects: DEFECTS_PARAMETER,
+});
+const VERIFICATION_PARAMETERS = Type.Object({
+	verdict: VERDICT_PARAMETER,
+	summary: Type.String({ minLength: 1, maxLength: 4000 }),
+	checks: CHECKS_PARAMETER,
+	defects: DEFECTS_PARAMETER,
+	findings: Type.Array(
 		Type.Object({
-			name: Type.String({ minLength: 1, maxLength: 300 }),
-			status: Type.Union([Type.Literal("pass"), Type.Literal("fail"), Type.Literal("not_run")]),
+			kind: Type.Union([
+				Type.Literal("decision"),
+				Type.Literal("discovery"),
+				Type.Literal("pitfall"),
+			]),
+			text: Type.String({ minLength: 1, maxLength: 2000 }),
 			evidence: Type.String({ minLength: 1, maxLength: 4000 }),
+			path: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
+			line: Type.Optional(Type.Number({ minimum: 1 })),
 		}),
-		{ minItems: 1, maxItems: 50 },
-	),
-	defects: Type.Array(
-		Type.String({ minLength: 1, maxLength: 2000 }),
-		{ maxItems: 50 },
+		{ maxItems: 12 },
 	),
 });
 
@@ -510,7 +533,9 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 	}
 
 	function verificationPrompt(): string {
-		return "[GOAL-HARNESS PHASE:VERIFYING]\nIndependently verify the actual result against every acceptance criterion, then submit_verification with concrete evidence.";
+		return `[GOAL-HARNESS PHASE:VERIFYING]
+Independently verify the actual result against every acceptance criterion, then submit_verification with concrete evidence.
+Include only distilled decisions, discoveries, or pitfalls that you personally confirmed from current files or checks in findings. Use an empty findings array when nothing is likely to help a later related task.`;
 	}
 
 	function stepVerificationPrompt(): string {
@@ -730,55 +755,6 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 	});
 
 	pi.registerTool({
-		name: "memory_note",
-		label: "Record durable learning",
-		description:
-			"Record a concise reusable discovery for promotion only if the goal later passes independent verification.",
-		parameters: Type.Object({
-			kind: Type.Union([
-				Type.Literal("repo"),
-				Type.Literal("code"),
-				Type.Literal("workflow"),
-				Type.Literal("friction"),
-				Type.Literal("open_item"),
-			]),
-			text: Type.String(),
-			path: Type.Optional(Type.String()),
-			line: Type.Optional(Type.Number({ minimum: 1 })),
-		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			if (state.phase !== "planning" && state.phase !== "executing") {
-				return {
-					content: [{ type: "text" as const, text: "Memory notes are unavailable in this phase." }],
-					details: { accepted: false },
-				};
-			}
-			const text = params.text.trim().slice(0, 2000);
-			if (!text) {
-				return {
-					content: [{ type: "text" as const, text: "Memory note rejected: text is required." }],
-					details: { accepted: false },
-				};
-			}
-			const note: MemoryNote = {
-				kind: params.kind,
-				text,
-				path: params.path?.trim().slice(0, 1000),
-				line: params.line,
-			};
-			state.memoryNotes.push(note);
-			persist(ctx);
-			return {
-				content: [{
-					type: "text" as const,
-					text: "Learning staged. It will enter memory only after independent verification passes.",
-				}],
-				details: { accepted: true, note },
-			};
-		},
-	});
-
-	pi.registerTool({
 		name: "submit_plan",
 		label: "Submit plan",
 		description: "Submit the structured implementation plan for the active goal. This ends the planning phase.",
@@ -980,7 +956,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 		name: "submit_step_verification",
 		label: "Submit step verification",
 		description: "Submit an independent verdict for the one implemented step awaiting review.",
-		parameters: VERIFICATION_PARAMETERS,
+		parameters: STEP_VERIFICATION_PARAMETERS,
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			if (state.phase !== "verifying-step") {
 				return {
@@ -1111,14 +1087,17 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 			if (params.verdict === "pass") {
 				const repo = repositoryIdentity(ctx.cwd);
 				const files = changedFiles(ctx.cwd, state.startCommit);
-				const memoryResult = config.memory.enabled
-					? storeVerifiedEpisode(
+				let memoryResult: ReturnType<typeof storeVerifiedEpisode> | undefined;
+				let memoryWarning: string | undefined;
+				if (config.memory.enabled) {
+					try {
+						memoryResult = storeVerifiedEpisode(
 						{
 							goalId: state.goalId,
 							cwd: ctx.cwd,
 							objective: state.objective,
 							outcome: params.summary,
-							notes: state.memoryNotes,
+							findings: params.findings,
 							friction: state.friction,
 							openItems: state.openItems,
 							files,
@@ -1129,8 +1108,15 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 							endCommit: repo.commit,
 						},
 						config.memory,
-					)
-					: undefined;
+						);
+					} catch (error) {
+						memoryWarning = error instanceof Error ? error.message : String(error);
+						ctx.ui.notify(
+							`Goal verification passed, but episodic memory could not be written: ${memoryWarning}`,
+							"warning",
+						);
+					}
+				}
 				state.phase = "complete";
 				state.blockedReason = undefined;
 				pendingAction = "announce-complete";
@@ -1138,9 +1124,14 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 				return {
 					content: [{
 						type: "text" as const,
-						text: `VERIFIED COMPLETE: ${params.summary}${memoryResult ? `\nVerified memory: ${memoryResult.id}` : ""}`,
+						text: `VERIFIED COMPLETE: ${params.summary}${memoryResult ? `\nVerified memory: ${memoryResult.id}` : ""}${memoryWarning ? "\nMemory warning: the verified result was not persisted." : ""}`,
 					}],
-					details: { accepted: true, verification: state.verification, memory: memoryResult },
+					details: {
+						accepted: true,
+						verification: state.verification,
+						memory: memoryResult,
+						memoryWarning,
+					},
 					terminate: true,
 				};
 			}
@@ -1350,22 +1341,57 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 	});
 
 	pi.registerCommand("memory-status", {
-		description: "Show recent verified memories for the current repository",
+		description: "Show memory health and recent active episodes",
 		handler: async (_args, ctx) => {
 			if (!config.memory.enabled) {
 				ctx.ui.notify("Goal harness memory is disabled in the namespaced configuration.", "info");
 				return;
 			}
-			const memories = recentMemories(ctx.cwd, 10);
-			if (memories.length === 0) {
-				ctx.ui.notify("No verified memories are stored for this or other repositories.", "info");
-				return;
-			}
+			const memories = recentMemories(ctx.cwd, 20, true);
+			const health = memoryHealth();
 			const lines = memories.map(
 				(memory) =>
-					`${memory.id} · ${truncate(memory.intent, 72)} · ${memory.repoKey} · ${memory.verifiedAt.slice(0, 10)}`,
+					`${memory.id} · ${memory.status ?? "verified"} · ${memory.learnings.length} findings · ${truncate(memory.intent, 52)} · ${memory.repoKey} · ${memory.provenance ?? "unknown"} · ${memory.verifiedAt.slice(0, 10)}`,
 			);
-			ctx.ui.notify(`Recent verified memories:\n${lines.join("\n")}`, "info");
+			ctx.ui.notify(
+				[
+					`Memory: ${health.ok ? "healthy" : "attention needed"} · ${health.verified} active · ${health.retired} retired`,
+					`Database: ${health.database}`,
+					health.lastError ? `Last error: ${health.lastError}` : "",
+					lines.length > 0
+						? `Recent episodes:\n${lines.join("\n")}`
+						: "No verified or retired episodes are stored.",
+				].filter(Boolean).join("\n"),
+				health.ok ? "info" : "warning",
+			);
+		},
+	});
+
+	pi.registerCommand("memory", {
+		description: "Retire or restore a durable memory episode",
+		handler: async (args, ctx) => {
+			if (!config.memory.enabled) {
+				ctx.ui.notify("Goal harness memory is disabled in the namespaced configuration.", "info");
+				return;
+			}
+			const [action, id, ...extra] = args.trim().split(/\s+/);
+			if (
+				extra.length > 0 ||
+				(action !== "retire" && action !== "restore") ||
+				!id
+			) {
+				ctx.ui.notify("Usage: /memory retire <memory-id> or /memory restore <memory-id>", "warning");
+				return;
+			}
+			const status = action === "retire" ? "retired" : "verified";
+			if (!setMemoryStatus(id, status)) {
+				ctx.ui.notify(`Memory ${id} was not found or could not be updated. Run /memory-status for diagnostics.`, "warning");
+				return;
+			}
+			ctx.ui.notify(
+				`Memory ${id} is now ${status}. ${status === "retired" ? "It will no longer be recalled." : "It can be recalled again."}`,
+				"info",
+			);
 		},
 	});
 
@@ -1515,7 +1541,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 				phaseInstructions = `You are the PLANNER. Use read-only exploration only. Do not edit, install, commit, or change external state.
 Resolve uncertainty by inspecting the repository. State material assumptions and risks.
 Make plan steps meaningful, independently reviewable milestones; do not create micro-steps or a separate step whose only purpose is final regression checking.
-Use recalled memory only as leads; confirm it against current files. Use memory_search for targeted history and memory_note only for genuinely reusable discoveries.
+Use recalled memory only as leads; confirm it against current files. Use memory_search for targeted history.
 Your final action must be submit_plan with a structured, testable plan.`;
 				break;
 			case "awaiting-execution":
@@ -1526,10 +1552,10 @@ Your final action must be submit_plan with a structured, testable plan.`;
 					state.reviewPolicy === "per-step" && state.verification?.verdict !== "fail"
 					? `You are the EXECUTOR. Implement only the first unapproved plan step shown in the phase context, or report a real blocker.
 Do not begin later steps. Use goal_progress complete_step with concrete evidence when this step's checks pass.
-Use memory_search only when prior work is relevant. Record concise durable discoveries with memory_note; they are promoted only after final goal verification passes.`
+Use memory_search only when prior work is relevant.`
 					: `You are the EXECUTOR. Continue until the approved plan is implemented or a real blocker requires user input.
 Use goal_progress to record evidence for completed steps. Do not self-certify the goal.
-Use memory_search only when prior work is relevant. Record concise durable discoveries with memory_note; they are promoted only after verification passes.
+Use memory_search only when prior work is relevant.
 After all implementation work and checks are complete, submit ready_for_verification.`;
 				break;
 			case "verifying-step":
@@ -1544,7 +1570,8 @@ Do not edit or advance the plan. The user can run /goal approve, /goal revise <f
 			case "verifying":
 				phaseInstructions = `You are the independent VERIFIER. Treat prior completion claims as untrusted.
 Do not edit files. Inspect actual changes and run relevant validation.
-Your final action must be submit_verification. PASS requires concrete passing evidence for every acceptance criterion.`;
+Your final action must be submit_verification. PASS requires concrete passing evidence for every acceptance criterion.
+The findings field is the only learning path into durable episodic memory. Include only concise future-useful decisions, discoveries, or pitfalls that your own inspection confirmed, with evidence and an optional source path. Do not restate the goal or generic success. Return an empty findings array when there is no durable lesson.`;
 				break;
 			case "paused":
 				phaseInstructions = "The goal is paused. Preserve it but do not advance it unless the user explicitly resumes.";

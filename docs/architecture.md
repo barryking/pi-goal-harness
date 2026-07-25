@@ -6,6 +6,21 @@ Pi Goal Harness is one Pi extension with three responsibilities:
 2. route work through plan, execute, verify, and repair phases;
 3. retrieve and promote bounded verified memory.
 
+## Four-memory placement
+
+The CoALA-inspired types are separated by responsibility:
+
+| Type | Owner |
+|---|---|
+| Working | Phase-specific context assembled by this extension |
+| Semantic | Pi-loaded `AGENTS.md` and version-controlled project documentation |
+| Procedural | Pi skills and this extension's executable workflow |
+| Episodic | Distilled, verifier-grounded prior-task episodes in SQLite |
+
+SQLite is not a replacement for project knowledge or skills. Entire-inspired
+session evidence and commit linkage provide provenance for an episode; the
+smaller recalled packet contains only the parts useful to a later task.
+
 ## Lifecycle
 
 ```text
@@ -88,4 +103,6 @@ A goal can enter `complete` only when:
 - every check has non-empty concrete evidence;
 - the defects list is empty.
 
-Memory promotion occurs only inside that same accepted PASS branch.
+Memory promotion occurs only inside that same accepted PASS branch. Reusable
+findings must be supplied by the independent verifier, include evidence, and
+are distinct from planner or executor claims.

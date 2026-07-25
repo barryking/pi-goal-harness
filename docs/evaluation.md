@@ -15,9 +15,12 @@ A context or memory change is accepted only when:
 The deterministic suite covers:
 
 - verified episode storage and recall;
+- verifier-owned finding promotion through the real workflow;
 - content-hash deduplication;
+- recoverable retirement and restoration;
 - secret redaction;
 - bounded injection;
+- repository provenance labelling and memory health diagnostics;
 - pruning of completed execution evidence;
 - verifier memory isolation;
 - per-step validation evidence and human approval gates;
@@ -31,6 +34,10 @@ The synthetic legacy executor packet measured 5,671 characters. The isolated
 packet measured 1,437 characters, a 74.7% reduction.
 
 ## Paired live evaluation
+
+This original experiment tested retrieval and use, not organic memory
+formation. The relevant and adversarial episodes were seeded directly so the
+run could isolate whether bounded recall helped or distracted the executor.
 
 Both runs started from the same dependency-free repository and objective. The
 memory run received one relevant verified episode and one stale adversarial
@@ -54,7 +61,59 @@ instruction, and passed the hidden checks. The control inferred a 1–1,000
 limit from nearby code and failed the hidden contract.
 
 This demonstrates a quality improvement on the fixture, not universal token
-savings. Total processed tokens rose slightly because cache reads increased.
+savings or reliable memory formation. Total processed tokens rose slightly
+because cache reads increased.
+
+## Organic lifecycle evaluation
+
+The stronger evaluation target is a paired sequence:
+
+```text
+source task → independent verification → promoted findings
+→ later related task → recall → independent hidden check
+```
+
+The retained runner supports live provider evaluation, but a publishable
+memory-quality claim should cover several task families and at least these
+conditions:
+
+| Condition | Question |
+|---|---|
+| No memory | What is the baseline? |
+| Relevant organic episode | Does verified prior experience improve the later task? |
+| Irrelevant episode | Does recall distract or add avoidable tokens? |
+| Stale or conflicting episode | Does current evidence win? |
+| Relevant external-repository episode | Do genuinely reusable lessons transfer? |
+
+Record hidden-check success, memory-induced regressions, repair cycles,
+retrieval relevance, uncached input, cache reads, output, total tokens, cost,
+and API calls. Repeat runs because a single model sample is not a stable
+benchmark.
+
+### Verifier-grounded lifecycle regression
+
+The 0.2.0 change was exercised through formation and reuse:
+
+1. A seeded memory run completed the fixture and its independent final verifier
+   promoted two sourced findings.
+2. The synthetic seed episodes were retired.
+3. A fresh checkout with the same repository identity ran with only the
+   verifier-produced episode eligible for recall.
+
+| Condition | Public tests | External hidden contract | Repairs | Total tokens | Cost | Calls |
+|---|---:|---:|---:|---:|---:|---:|
+| No memory | 8/8 | FAIL | 0 | 96,974 | $0.318639 | 20 |
+| Seeded retrieval | 8/8 | PASS | 0 | 104,860 | $0.368318 | 20 |
+| Organic verifier episode only | 8/8 | PASS | 0 | 101,578 | $0.341771 | 21 |
+
+The organic-only run recalled the episode at the exact current commit, passed
+with zero repairs, and promoted two new evidence-backed findings. Relative to
+the no-memory sample, it used 4.7% more total tokens and cost 7.3% more. This
+establishes that the full lifecycle functions and helped on this fixture; it
+does not establish average quality or token effects across task families.
+
+The sanitized result is retained under
+`eval/results/2026-07-25-verifier-grounded-memory.json`.
 
 ## Exact-final regression
 
@@ -88,7 +147,8 @@ cost. Consequently, per-step mode now pauses with declared-check evidence and
 keeps independent `/verify` optional at a checkpoint; independent final
 verification remains mandatory.
 
-These are individual model runs rather than statistically powered averages.
+The recorded runs are individual model samples rather than statistically
+powered averages.
 They demonstrate the direction and magnitude of the interaction-cost tradeoff,
 not a universal multiplier.
 

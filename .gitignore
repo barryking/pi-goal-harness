@@ -3,4 +3,7 @@ node_modules/
 coverage/
 .DS_Store
 eval/results/
+!eval/results/
+eval/results/*
+!eval/results/2026-07-25-verifier-grounded-memory.json
 eval/tmp/

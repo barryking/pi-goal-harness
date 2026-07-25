@@ -25,13 +25,13 @@ For a recoverable clean migration:
 4. Copy only `auth.json` from the backup into the new directory and keep it at
    `0600`. Do not copy session files, settings, prompts, skills, extensions, or
    previous harness data into the clean installation.
-5. Install a pinned release:
+5. Install the current GitHub package:
 
    ```text
-   pi install git:github.com/barryking/pi-goal-harness@v0.1.2
+   pi install git:github.com/barryking/pi-goal-harness
    ```
 
-6. Confirm `pi list` shows the pinned package, then start Pi and run
+6. Confirm `pi list` shows the package, then start Pi and run
    `/goal-status` and `/memory-status`.
 
 This approach preserves old sessions, configuration, and harness data only in
@@ -89,7 +89,7 @@ available. `current` assigns the model active at Pi startup to every role.
     "maxResults": 4,
     "maxInjectedChars": 6000,
     "maxResultChars": 900,
-    "storeColdEvidence": true
+    "storeColdEvidence": false
   }
 }
 ```
