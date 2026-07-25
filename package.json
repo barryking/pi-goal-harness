@@ -1,6 +1,6 @@
 {
   "name": "pi-goal-harness",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Plan, execute, independently verify, and retain verifier-gated memory in Pi.",
   "type": "module",
   "author": "Barry King",
@@ -41,10 +41,12 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.82.1",
+    "@earendil-works/pi-tui": "0.82.1",
     "@types/node": "^24.0.0",
     "tsx": "^4.20.0",
     "typebox": "^1.1.38",

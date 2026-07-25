@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Render full plans through Pi's registered TUI entry API.
+- Keep displayed plans out of model context to avoid duplicate token usage.
+
 ## 0.1.1
 
 - Display the complete structured plan persistently before execution approval.

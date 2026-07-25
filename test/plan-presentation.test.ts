@@ -36,13 +36,15 @@ test("formats the complete structured plan for approval", () => {
 	assert.match(content, /Run \/execute to approve this plan/);
 });
 
-test("submitting and reopening a plan emits a persistent full-plan message", async () => {
+test("submitting and reopening a plan emits a rendered TUI-only entry", async () => {
 	process.env.PI_GOAL_HARNESS_HOME = mkdtempSync(
 		join(tmpdir(), "pi-goal-harness-plan-presentation-"),
 	);
 
 	const commands = new Map<string, { handler: (args: string, ctx: any) => unknown }>();
 	const tools = new Map<string, any>();
+	const entryRenderers = new Map<string, any>();
+	const entries: Array<{ customType: string; data: any }> = [];
 	const messages: any[] = [];
 	const notifications: Array<{ message: string; type: string }> = [];
 	const registeredTools: string[] = [];
@@ -57,6 +59,9 @@ test("submitting and reopening a plan emits a persistent full-plan message", asy
 		registerCommand(name: string, command: { handler: (args: string, ctx: any) => unknown }) {
 			commands.set(name, command);
 		},
+		registerEntryRenderer(customType: string, renderer: any) {
+			entryRenderers.set(customType, renderer);
+		},
 		getActiveTools() {
 			return [...activeTools];
 		},
@@ -70,7 +75,9 @@ test("submitting and reopening a plan emits a persistent full-plan message", asy
 			return true;
 		},
 		setThinkingLevel() {},
-		appendEntry() {},
+		appendEntry(customType: string, data: any) {
+			entries.push({ customType, data });
+		},
 		setSessionName() {},
 		sendUserMessage() {},
 		sendMessage(message: any, options: any) {
@@ -126,17 +133,32 @@ test("submitting and reopening a plan emits a persistent full-plan message", asy
 	);
 
 	assert.equal(result.details.accepted, true);
-	assert.equal(messages.length, 1);
-	assert.equal(messages[0].message.customType, "goal-harness-plan");
-	assert.equal(messages[0].message.display, true);
-	assert.equal(messages[0].options.triggerTurn, false);
-	assert.match(messages[0].message.content, /Acceptance criteria \(1\)/);
-	assert.match(messages[0].message.content, /Run \/execute to approve this plan/);
+	const submittedPlans = entries.filter(
+		(entry) => entry.customType === "goal-harness-plan",
+	);
+	assert.equal(submittedPlans.length, 1);
+	assert.match(submittedPlans[0].data.content, /Acceptance criteria \(1\)/);
+	assert.match(submittedPlans[0].data.content, /Run \/execute to approve this plan/);
+	assert.equal(messages.length, 0, "TUI-only plans must not enter model context");
 
-	messages.length = 0;
 	await commands.get("goal-plan")?.handler("", ctx);
-	assert.equal(messages.length, 1);
-	assert.equal(messages[0].message.customType, "goal-harness-plan");
-	assert.match(messages[0].message.content, /Implement typed state transitions/);
+	const reopenedPlans = entries.filter(
+		(entry) => entry.customType === "goal-harness-plan",
+	);
+	assert.equal(reopenedPlans.length, 2);
+	assert.match(reopenedPlans[1].data.content, /Implement typed state transitions/);
+	assert.equal(messages.length, 0, "reopening a plan must not enter model context");
 	assert.equal(notifications.length, 0);
+
+	const renderer = entryRenderers.get("goal-harness-plan");
+	assert.equal(typeof renderer, "function");
+	const component = renderer(
+		{ data: reopenedPlans[1].data },
+		{ expanded: false, outputPad: 0 },
+		{ fg: (_color: string, text: string) => text },
+	);
+	const rendered = component.render(120).join("\n");
+	assert.match(rendered.trimStart(), /^Goal plan/);
+	assert.match(rendered, /Acceptance criteria \(1\)/);
+	assert.match(rendered, /Verify: Run domain and persistence tests/);
 });

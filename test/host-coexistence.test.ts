@@ -30,6 +30,7 @@ test("idle installation preserves the host model, tools, and command policy", as
 		registerCommand(name: string) {
 			commands.add(name);
 		},
+		registerEntryRenderer() {},
 		getActiveTools() {
 			return [...activeTools];
 		},
