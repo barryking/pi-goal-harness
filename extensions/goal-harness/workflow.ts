@@ -5,6 +5,8 @@ import {
 	type MemoryNote,
 } from "./memory.ts";
 
+export const GOAL_STATE_ENTRY = "goal-harness-state";
+
 export const PHASES = [
 	"idle",
 	"planning",

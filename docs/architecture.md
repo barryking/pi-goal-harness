@@ -37,6 +37,15 @@ Goal state is stored as Pi custom session entries. It includes the objective,
 criteria, review policy, plan, step-review evidence, progress, repair counts,
 final verification report, memory references, and session evidence paths.
 
+The state remains attached to the saved Pi session tree. A plain `pi` launch
+starts a new session rather than automatically adopting another session's
+goal. From an idle session, `/goal-status` performs bounded, read-only recovery
+discovery over recent sessions for the same filesystem working directory. It
+deduplicates phase handoffs by goal ID, ignores completed or superseded state,
+and presents an explicit `pi --session <id>` command. It never switches
+sessions automatically because multiple unfinished goals may legitimately
+coexist.
+
 ## Phase contexts
 
 | Phase | Included | Excluded |

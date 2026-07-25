@@ -28,7 +28,12 @@ import {
 	type MemoryNote,
 } from "./memory.ts";
 import {
+	findRecoverableGoals,
+	formatRecoveryStatus,
+} from "./recovery.ts";
+import {
 	emptyState,
+	GOAL_STATE_ENTRY,
 	normalizeState,
 	stepSymbol,
 	verificationValidationError,
@@ -40,6 +45,10 @@ interface PlanViewEntry {
 	content: string;
 }
 
+interface StatusViewEntry {
+	content: string;
+}
+
 type PendingAction =
 	| "start-verification"
 	| "start-step-repair"
@@ -48,8 +57,8 @@ type PendingAction =
 	| "announce-complete"
 	| "announce-needs-attention";
 
-const STATE_ENTRY = "goal-harness-state";
 const PLAN_VIEW_ENTRY = "goal-harness-plan";
+const STATUS_VIEW_ENTRY = "goal-harness-status";
 const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", "memory_search", "memory_evidence", "memory_note", "submit_plan"];
 const EXECUTE_TOOLS = ["read", "bash", "edit", "write", "memory_search", "memory_evidence", "memory_note", "goal_progress"];
 const VERIFY_TOOLS = ["read", "bash", "grep", "find", "ls", "submit_verification"];
@@ -270,9 +279,14 @@ export default function goalHarness(pi: ExtensionAPI): void {
 		},
 	);
 
+	pi.registerEntryRenderer<StatusViewEntry>(
+		STATUS_VIEW_ENTRY,
+		(entry) => new Text(entry.data?.content ?? "Goal status is unavailable.", 1, 0),
+	);
+
 	function persist(ctx?: ExtensionContext): void {
 		state.updatedAt = now();
-		pi.appendEntry(STATE_ENTRY, structuredClone(state));
+		pi.appendEntry(GOAL_STATE_ENTRY, structuredClone(state));
 		if (ctx) updateUi(ctx);
 	}
 
@@ -281,7 +295,7 @@ export default function goalHarness(pi: ExtensionAPI): void {
 			.reverse()
 			.find(
 				(item: { type: string; customType?: string }) =>
-					item.type === "custom" && item.customType === STATE_ENTRY,
+					item.type === "custom" && item.customType === GOAL_STATE_ENTRY,
 			) as { data?: GoalState } | undefined;
 		state = normalizeState(entry?.data);
 		pendingAction = undefined;
@@ -296,6 +310,10 @@ export default function goalHarness(pi: ExtensionAPI): void {
 		pi.appendEntry<PlanViewEntry>(PLAN_VIEW_ENTRY, {
 			content: formatPlanForReview(state),
 		});
+	}
+
+	function displayStatus(content: string): void {
+		pi.appendEntry<StatusViewEntry>(STATUS_VIEW_ENTRY, { content });
 	}
 
 	async function moveToFreshSession(
@@ -316,7 +334,7 @@ export default function goalHarness(pi: ExtensionAPI): void {
 		const result = await ctx.newSession({
 			parentSession,
 			setup: async (sessionManager) => {
-				sessionManager.appendCustomEntry(STATE_ENTRY, stateForHandoff);
+				sessionManager.appendCustomEntry(GOAL_STATE_ENTRY, stateForHandoff);
 				sessionManager.appendCustomMessageEntry("goal-harness-bootstrap", bootstrap, false);
 				sessionManager.appendSessionInfo(`Goal ${phaseLabel}: ${truncate(stateForHandoff.objective, 48)}`);
 			},
@@ -370,6 +388,17 @@ export default function goalHarness(pi: ExtensionAPI): void {
 			return config.fallbackExecutor;
 		}
 		return config.executor;
+	}
+
+	async function statusForSession(
+		ctx: ExtensionCommandContext,
+	): Promise<string> {
+		if (state.phase !== "idle") return formatState(state);
+		const recoverable = await findRecoverableGoals(
+			ctx.cwd,
+			ctx.sessionManager.getSessionDir(),
+		);
+		return formatRecoveryStatus(recoverable);
 	}
 
 	function toolsForPhase(): string[] {
@@ -1152,7 +1181,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 			const command = input.toLowerCase();
 
 			if (!input || command === "status") {
-				ctx.ui.notify(formatState(state), "info");
+				displayStatus(await statusForSession(ctx));
 				return;
 			}
 			if (command === "approve") {
@@ -1164,7 +1193,13 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 				return;
 			}
 			if (command === "clear") {
-				state = emptyState();
+				const cleared = state;
+				state = {
+					...emptyState(),
+					goalId: cleared.goalId,
+					objective: cleared.objective,
+					startedAt: cleared.startedAt,
+				};
 				pendingAction = undefined;
 				persist(ctx);
 				await applyPhase(ctx);
@@ -1241,14 +1276,14 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 	});
 
 	pi.registerCommand("goal-status", {
-		description: "Show the active goal, phase, progress, and latest verification",
-		handler: async (_args, ctx) => ctx.ui.notify(formatState(state), "info"),
+		description: "Show the active goal or find a recoverable goal for this project",
+		handler: async (_args, ctx) => displayStatus(await statusForSession(ctx)),
 	});
 
 	pi.registerCommand("goal-plan", {
 		description: "Show the complete goal plan, acceptance criteria, risks, and verification methods",
 		handler: async (_args, ctx) => {
-			if (!state.objective) {
+			if (state.phase === "idle" || !state.objective) {
 				ctx.ui.notify("There is no active goal. Run /goal <objective> first.", "warning");
 				return;
 			}

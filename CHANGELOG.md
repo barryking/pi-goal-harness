@@ -16,6 +16,11 @@
 - Require Pi coding-agent and TUI hosts at version 0.82.1 or newer.
 - Clarify authentication-only clean migration and `/goal-plan` pre-plan
   feedback.
+- Discover unfinished goals from recent same-project Pi sessions when
+  `/goal-status` is run from an idle session, including path aliases and
+  case-insensitive filesystem spellings.
+- Render goal status as a persistent TUI-only entry rather than a transient
+  notification.
 
 ## 0.1.2
 

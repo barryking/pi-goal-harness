@@ -90,10 +90,11 @@ test("submitting and reopening a plan emits a rendered TUI-only entry", async ()
 	goalHarness(pi as never);
 
 	const model = { provider: "openai-codex", id: "gpt-5.6-sol" };
+	const projectDir = mkdtempSync(join(tmpdir(), "pi-goal-harness-plan-repo-"));
 	const ctx = {
 		mode: "print",
 		hasUI: false,
-		cwd: mkdtempSync(join(tmpdir(), "pi-goal-harness-plan-repo-")),
+		cwd: projectDir,
 		model,
 		thinkingLevel: "medium",
 		modelRegistry: {
@@ -103,6 +104,7 @@ test("submitting and reopening a plan emits a rendered TUI-only entry", async ()
 		},
 		sessionManager: {
 			getBranch: () => [],
+			getSessionDir: () => join(projectDir, "sessions"),
 			getSessionFile: () => undefined,
 		},
 		ui: {
@@ -114,6 +116,14 @@ test("submitting and reopening a plan emits a rendered TUI-only entry", async ()
 		},
 		isIdle: () => true,
 	};
+
+	await commands.get("goal-status")?.handler("", ctx);
+	const statusEntries = entries.filter(
+		(entry) => entry.customType === "goal-harness-status",
+	);
+	assert.equal(statusEntries.length, 1);
+	assert.match(statusEntries[0].data.content, /No active goal in this Pi session/);
+	assert.equal(messages.length, 0, "TUI-only status must not enter model context");
 
 	await commands.get("goal-plan")?.handler("", ctx);
 	assert.match(notifications.at(-1)?.message ?? "", /There is no active goal/);

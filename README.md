@@ -93,7 +93,7 @@ Useful commands:
 
 ```text
 /goal <objective>       Start a persistent goal
-/goal status            Show phase, progress, and verification
+/goal status            Show the active goal or a recoverable saved goal
 /goal approve           Accept the reviewed step and continue
 /goal revise <feedback> Return the reviewed step for revision
 /goal pause             Stop advancing while preserving the goal
@@ -108,6 +108,48 @@ Useful commands:
 /harness-setup          Choose a model preset
 /harness-setup status   Show effective configuration
 ```
+
+## Resuming after exiting Pi
+
+Goal state is stored in Pi's saved session tree. Exiting Pi does not delete the
+goal, but launching plain `pi` starts a new session and does not silently adopt
+state from another session.
+
+To continue the most recent saved session for the current working directory:
+
+```text
+pi -c
+```
+
+To browse saved sessions:
+
+```text
+pi -r
+```
+
+If you already opened a new session, run `/goal-status`. Status is rendered as
+a persistent TUI-only entry and does not enter model context. When there is no
+goal in the current session, the harness searches recent saved sessions for
+the same working directory, ignores completed and superseded goal states, and
+shows the most recent recoverable goal with an exact command:
+
+```text
+No active goal in this Pi session.
+
+Recoverable goal found:
+Goal: Add project-level task filtering
+Phase: awaiting-review
+Progress: 2/4
+
+Resume it from your shell:
+pi --session 019f...
+```
+
+Recovery is advisory rather than automatic because a project can have multiple
+unfinished goals in different sessions. If more than one exists,
+`/goal-status` recommends `pi -r` so you can choose deliberately. Session
+discovery is bounded to the 100 most recently modified sessions for the
+working directory.
 
 ## Choosing a workflow
 
