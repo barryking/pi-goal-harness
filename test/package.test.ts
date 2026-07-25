@@ -12,6 +12,7 @@ test("publishes a conventional, dependency-free Pi package", () => {
 	assert.deepEqual(manifest.pi.extensions, ["./extensions/goal-harness/index.ts"]);
 	assert.equal(manifest.dependencies, undefined);
 	assert.equal(manifest.peerDependencies["@earendil-works/pi-coding-agent"], "*");
+	assert.equal(manifest.peerDependencies["@earendil-works/pi-tui"], "*");
 	assert.equal(manifest.peerDependencies.typebox, "*");
 });
 

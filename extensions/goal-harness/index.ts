@@ -3,6 +3,7 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
 	currentModelConfig,
@@ -83,6 +84,10 @@ interface GoalState {
 	updatedAt: string;
 }
 
+interface PlanViewEntry {
+	content: string;
+}
+
 type PendingAction =
 	| "start-verification"
 	| "start-repair"
@@ -90,6 +95,7 @@ type PendingAction =
 	| "announce-needs-attention";
 
 const STATE_ENTRY = "goal-harness-state";
+const PLAN_VIEW_ENTRY = "goal-harness-plan";
 const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", "memory_search", "memory_evidence", "memory_note", "submit_plan"];
 const EXECUTE_TOOLS = ["read", "bash", "edit", "write", "memory_search", "memory_evidence", "memory_note", "goal_progress"];
 const VERIFY_TOOLS = ["read", "bash", "grep", "find", "ls", "submit_verification"];
@@ -317,6 +323,18 @@ export default function goalHarness(pi: ExtensionAPI): void {
 	let baselineTools: string[] = [];
 	let fallbackNoticeShown = false;
 
+	pi.registerEntryRenderer<PlanViewEntry>(
+		PLAN_VIEW_ENTRY,
+		(entry, _options, theme) => {
+			const content = entry.data?.content ?? "Goal plan is unavailable.";
+			const styled = content.replace(
+				/^Goal plan/,
+				theme.fg("accent", "Goal plan"),
+			);
+			return new Text(styled, 1, 0);
+		},
+	);
+
 	function persist(ctx?: ExtensionContext): void {
 		state.updatedAt = now();
 		pi.appendEntry(STATE_ENTRY, JSON.parse(JSON.stringify(state)));
@@ -337,6 +355,12 @@ export default function goalHarness(pi: ExtensionAPI): void {
 
 	function serializedState(): GoalState {
 		return JSON.parse(JSON.stringify(state)) as GoalState;
+	}
+
+	function displayPlanForReview(): void {
+		pi.appendEntry<PlanViewEntry>(PLAN_VIEW_ENTRY, {
+			content: formatPlanForReview(state),
+		});
 	}
 
 	async function moveToFreshSession(
@@ -698,15 +722,7 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 			pendingAction = undefined;
 			persist(ctx);
 			await applyPhase(ctx);
-			const fullPlan = formatPlanForReview(state);
-			pi.sendMessage(
-				{
-					customType: "goal-harness-plan",
-					content: fullPlan,
-					display: true,
-				},
-				{ triggerTurn: false },
-			);
+			displayPlanForReview();
 
 			return {
 				content: [
@@ -992,14 +1008,7 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 				ctx.ui.notify("There is no structured goal plan to show. Run /goal <objective> first.", "warning");
 				return;
 			}
-			pi.sendMessage(
-				{
-					customType: "goal-harness-plan",
-					content: formatPlanForReview(state),
-					display: true,
-				},
-				{ triggerTurn: false },
-			);
+			displayPlanForReview();
 		},
 	});
 

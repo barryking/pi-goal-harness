@@ -29,7 +29,7 @@ Pi 0.82 or newer and Node.js 22.19 or newer are recommended.
 From GitHub:
 
 ```text
-pi install git:github.com/barryking/pi-goal-harness@v0.1.1
+pi install git:github.com/barryking/pi-goal-harness@v0.1.2
 ```
 
 From a local checkout:
