@@ -1,0 +1,62 @@
+{
+  "name": "pi-goal-harness",
+  "version": "0.1.0",
+  "description": "Plan, execute, independently verify, and retain verifier-gated memory in Pi.",
+  "type": "module",
+  "author": "Barry King",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/barryking/pi-goal-harness.git"
+  },
+  "homepage": "https://github.com/barryking/pi-goal-harness#readme",
+  "bugs": {
+    "url": "https://github.com/barryking/pi-goal-harness/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "coding-agent",
+    "plan-execute-verify",
+    "agent-memory",
+    "coala"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": [
+    "extensions",
+    "docs",
+    "eval",
+    "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/goal-harness/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.82.1",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typebox": "^1.1.38",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "pack:check": "npm pack --dry-run",
+    "check": "npm run typecheck && npm test && npm run pack:check"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
