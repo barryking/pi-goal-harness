@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Display the complete structured plan persistently before execution approval.
+- Add `/goal-plan` to reopen acceptance criteria, risks, implementation details,
+  and per-step verification methods.
+
 ## 0.1.0
 
 - Add persistent goal, plan, execution, verification, and bounded repair phases.
