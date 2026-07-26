@@ -7,9 +7,9 @@ const root = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 
 test("publishes a conventional, dependency-free Pi package", () => {
-	assert.equal(manifest.name, "pi-goal-harness");
+	assert.equal(manifest.name, "pi-goala");
 	assert.ok(manifest.keywords.includes("pi-package"));
-	assert.deepEqual(manifest.pi.extensions, ["./extensions/goal-harness/index.ts"]);
+	assert.deepEqual(manifest.pi.extensions, ["./extensions/goala/index.ts"]);
 	assert.equal(manifest.dependencies, undefined);
 	assert.equal(manifest.peerDependencies["@earendil-works/pi-coding-agent"], ">=0.82.1");
 	assert.equal(manifest.peerDependencies["@earendil-works/pi-tui"], ">=0.82.1");
@@ -18,6 +18,7 @@ test("publishes a conventional, dependency-free Pi package", () => {
 
 test("README foregrounds the product and keeps source attribution in acknowledgments", () => {
 	const readme = readFileSync(resolve(root, "README.md"), "utf8");
+	assert.match(readme, /Goal-Oriented Agent Lifecycle Architecture/);
 	assert.match(readme, /plan → execute → independently verify/i);
 	assert.match(readme, /## Influences and acknowledgments/);
 	assert.doesNotMatch(readme, /## What it is not/);

@@ -21,6 +21,19 @@ repositories and high-risk tasks.
 Pattern checks cannot understand every shell language construct. Review the
 plan and confirmations.
 
+## Authoritative sources
+
+Goal sources must resolve to bounded UTF-8 files inside the current project.
+Paths, byte counts, and hashes are persisted; contents remain in the project
+and are read by the model. Register only trusted requirement documents. A
+source file can contain instructions with the same authority as the goal, so
+project containment is not a substitute for repository trust.
+
+Source drift blocks workflow submissions but does not prevent an executor from
+editing the file. Do not register a document that the implementation is
+expected to rewrite; intentionally revised contracts should be approved through
+a replacement goal.
+
 ## Memory
 
 - Durable episodes are written only after verifier PASS, and reusable findings

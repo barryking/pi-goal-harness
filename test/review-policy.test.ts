@@ -3,17 +3,17 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { OPENAI_CODEX_PRESET } from "../extensions/goal-harness/config.ts";
-import goalHarness from "../extensions/goal-harness/index.ts";
-import { searchMemories } from "../extensions/goal-harness/memory.ts";
+import { OPENAI_CODEX_PRESET } from "../extensions/goala/config.ts";
+import goala from "../extensions/goala/index.ts";
+import { searchMemories } from "../extensions/goala/memory.ts";
 
 test("per-step review gates progress and promotes final-verifier findings", async () => {
-	process.env.PI_GOAL_HARNESS_HOME = mkdtempSync(
-		join(tmpdir(), "pi-goal-harness-review-policy-"),
+	process.env.PI_GOALA_HOME = mkdtempSync(
+		join(tmpdir(), "pi-goala-review-policy-"),
 	);
-	process.env.PI_HARNESS_MEMORY_ENABLED = "1";
-	process.env.PI_HARNESS_MEMORY_ROOT = mkdtempSync(
-		join(tmpdir(), "pi-goal-harness-review-memory-"),
+	process.env.PI_GOALA_MEMORY_ENABLED = "1";
+	process.env.PI_GOALA_MEMORY_ROOT = mkdtempSync(
+		join(tmpdir(), "pi-goala-review-memory-"),
 	);
 
 	const commands = new Map<string, { handler: (args: string, ctx: any) => unknown }>();
@@ -65,14 +65,14 @@ test("per-step review gates progress and promotes final-verifier findings", asyn
 		},
 	};
 
-	goalHarness(pi as never);
+	goala(pi as never);
 	assert.ok(!registeredTools.includes("memory_note"));
 
 	const model = { provider: "openai-codex", id: "gpt-5.6-sol" };
 	const ctx = {
 		mode: "print",
 		hasUI: false,
-		cwd: mkdtempSync(join(tmpdir(), "pi-goal-harness-review-repo-")),
+		cwd: mkdtempSync(join(tmpdir(), "pi-goala-review-repo-")),
 		model,
 		thinkingLevel: "medium",
 		modelRegistry: {
@@ -95,7 +95,7 @@ test("per-step review gates progress and promotes final-verifier findings", asyn
 	};
 
 	const latestState = () =>
-		entries.filter((entry) => entry.customType === "goal-harness-state").at(-1)?.data;
+		entries.filter((entry) => entry.customType === "goala-state").at(-1)?.data;
 	const runAgentEnd = async () => {
 		for (const handler of handlers.get("agent_end") ?? []) await handler({}, ctx);
 	};

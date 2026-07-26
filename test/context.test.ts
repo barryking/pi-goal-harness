@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildPhaseContext } from "../extensions/goal-harness/context.ts";
-import type { MemoryConfig } from "../extensions/goal-harness/memory.ts";
+import { buildPhaseContext } from "../extensions/goala/context.ts";
+import type { MemoryConfig } from "../extensions/goala/memory.ts";
 
 const memoryConfig: MemoryConfig = {
 	enabled: true,

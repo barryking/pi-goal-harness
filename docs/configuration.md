@@ -3,7 +3,7 @@
 Configuration is stored at:
 
 ```text
-~/.pi/agent/pi-goal-harness/config.json
+~/.pi/agent/pi-goala/config.json
 ```
 
 The package does not modify Pi's main settings, authentication, model list,
@@ -11,9 +11,9 @@ skills, prompts, or other packages.
 
 ## Clean migration and rollback
 
-A reset is not required for an ordinary installation: Pi Goal Harness is
+A reset is not required for an ordinary installation: Goala is
 namespaced and can coexist with other Pi configuration. A clean migration is
-useful when replacing an older hand-maintained harness or when you explicitly
+useful when replacing an older hand-maintained workflow or when you explicitly
 want to remove inherited skills, prompts, model overrides, and extensions.
 
 For a recoverable clean migration:
@@ -24,17 +24,17 @@ For a recoverable clean migration:
 3. Create a new `~/.pi/agent/` directory with `0700` permissions.
 4. Copy only `auth.json` from the backup into the new directory and keep it at
    `0600`. Do not copy session files, settings, prompts, skills, extensions, or
-   previous harness data into the clean installation.
+   previous workflow data into the clean installation.
 5. Install the current GitHub package:
 
    ```text
-   pi install git:github.com/barryking/pi-goal-harness
+   pi install git:github.com/barryking/pi-goala
    ```
 
 6. Confirm `pi list` shows the package, then start Pi and run
    `/goal-status` and `/memory-status`.
 
-This approach preserves old sessions, configuration, and harness data only in
+This approach preserves old sessions, configuration, and workflow data only in
 the backup for rollback. They are not migrated into or available from the
 clean installation. To roll back, exit Pi, move the new agent directory aside,
 and restore the backup to `~/.pi/agent/`.
@@ -42,10 +42,10 @@ and restore the backup to `~/.pi/agent/`.
 ## Interactive setup
 
 ```text
-/harness-setup
-/harness-setup status
-/harness-setup openai
-/harness-setup current
+/goala-setup
+/goala-setup status
+/goala-setup openai
+/goala-setup current
 ```
 
 `openai` selects the tested Sol/Luna/Terra model split when those models are
@@ -106,16 +106,31 @@ Restart Pi or use `/reload` after manually editing the file.
 The policy can be overridden for one goal with `/execute final` or
 `/execute per-step`.
 
+## Authoritative goal sources
+
+Register detailed requirements or architecture contracts when starting a goal:
+
+```text
+/goal --source docs/PRD.md -- Implement the offline export workflow
+```
+
+Repeat `--source` for up to eight UTF-8 project files. Each file is limited to
+1,000,000 bytes and must resolve inside the current working directory. The
+Goala stores only its relative path, byte count, and SHA-256 hash in goal
+state. Source contents remain in the repository and are read on demand by each
+phase. There is no configuration switch because source registration is
+explicit per goal.
+
 ## Environment overrides
 
 These are primarily useful for CI and isolated evaluation:
 
 ```text
-PI_GOAL_HARNESS_HOME=<namespaced data directory>
-PI_HARNESS_MEMORY_ROOT=<memory-only directory>
-PI_HARNESS_MEMORY_ENABLED=0|1
-PI_HARNESS_FRESH_SESSIONS=0|1
-PI_HARNESS_REVIEW_POLICY=final|per-step
+PI_GOALA_HOME=<namespaced data directory>
+PI_GOALA_MEMORY_ROOT=<memory-only directory>
+PI_GOALA_MEMORY_ENABLED=0|1
+PI_GOALA_FRESH_SESSIONS=0|1
+PI_GOALA_REVIEW_POLICY=final|per-step
 ```
 
 ## Uninstall
@@ -123,9 +138,9 @@ PI_HARNESS_REVIEW_POLICY=final|per-step
 Remove the package using the same source identity used during installation:
 
 ```text
-pi remove git:github.com/barryking/pi-goal-harness
+pi remove git:github.com/barryking/pi-goala
 ```
 
-Package removal does not delete `~/.pi/agent/pi-goal-harness/`. This preserves
+Package removal does not delete `~/.pi/agent/pi-goala/`. This preserves
 configuration and verified memory for reinstall or manual backup. Remove that
 directory separately only when its data is no longer needed.

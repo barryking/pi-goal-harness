@@ -3,7 +3,7 @@ import test from "node:test";
 import {
 	normalizeState,
 	verificationValidationError,
-} from "../extensions/goal-harness/workflow.ts";
+} from "../extensions/goala/workflow.ts";
 
 test("normalizes legacy and malformed workflow state without trusting persisted shapes", () => {
 	const state = normalizeState({
@@ -27,7 +27,7 @@ test("normalizes legacy and malformed workflow state without trusting persisted 
 		],
 	});
 
-	assert.equal(state.version, 3);
+	assert.equal(state.version, 4);
 	assert.equal(state.phase, "idle");
 	assert.equal(state.reviewPolicy, "final");
 	assert.deepEqual(state.acceptanceCriteria, ["valid"]);

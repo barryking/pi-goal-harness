@@ -1,17 +1,17 @@
 # Memory model
 
-Pi Goal Harness uses the four-memory placement described by CoALA and the
+Goala uses the four-memory placement described by CoALA and the
 linked memory-system talk. The four types are architectural roles, not four
-tables in the harness database.
+tables in Goala's database.
 
-| Memory type | Purpose | Pi Goal Harness placement |
+| Memory type | Purpose | Goala placement |
 |---|---|---|
 | Working | What the agent needs now | The bounded phase packet and current Pi context |
 | Semantic | Stable facts, rules, and project knowledge | Repository `AGENTS.md`, architecture docs, ADRs, and global `AGENTS.md` |
-| Procedural | How to perform repeatable work | Pi skills and the executable plan/execute/verify harness workflow |
+| Procedural | How to perform repeatable work | Pi skills and the executable plan/execute/verify Goala workflow |
 | Episodic | Distilled experience from past work | Verified local SQLite episodes |
 
-The harness owns working-memory assembly and episodic recall. It deliberately
+Goala owns working-memory assembly and episodic recall. It deliberately
 uses Pi and version-controlled files for semantic and procedural memory rather
 than copying those sources of truth into SQLite.
 
@@ -24,7 +24,7 @@ than copying those sources of truth into SQLite.
 | Repeatable specialist workflow | A Pi skill |
 | Current outcome and exceptions | The `/goal` objective and acceptance criteria |
 | Cross-project personal defaults | `~/.pi/agent/AGENTS.md` |
-| What happened during a prior successful task | Harness episodic memory |
+| What happened during a prior successful task | Goala episodic memory |
 
 Pi loads `AGENTS.md` into each fresh planning, execution, and verification
 session. Keep it concise and link to detailed repository documents. A critical

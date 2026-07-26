@@ -7,14 +7,14 @@ import {
 	configPath,
 	configuredModels,
 	currentModelConfig,
-	HARNESS_SETUP_PRESETS,
+	GOALA_SETUP_PRESETS,
 	loadConfig,
 	OPENAI_CODEX_PRESET,
 	writeConfig,
-} from "../extensions/goal-harness/config.ts";
+} from "../extensions/goala/config.ts";
 
-const root = mkdtempSync(join(tmpdir(), "pi-goal-harness-config-"));
-process.env.PI_GOAL_HARNESS_HOME = root;
+const root = mkdtempSync(join(tmpdir(), "pi-goala-config-"));
+process.env.PI_GOALA_HOME = root;
 
 test("uses the documented OpenAI preset when no user config exists", () => {
 	const config = loadConfig();
@@ -39,8 +39,8 @@ test("writes a namespaced current-model configuration with private permissions",
 });
 
 test("setup presets are data-driven and expose unique configured models", () => {
-	const openai = HARNESS_SETUP_PRESETS.find((preset) => preset.id === "openai");
-	const current = HARNESS_SETUP_PRESETS.find((preset) => preset.id === "current");
+	const openai = GOALA_SETUP_PRESETS.find((preset) => preset.id === "openai");
+	const current = GOALA_SETUP_PRESETS.find((preset) => preset.id === "current");
 	assert.ok(openai);
 	assert.ok(current);
 	assert.deepEqual(openai.create(), OPENAI_CODEX_PRESET);

@@ -3,8 +3,13 @@ import {
 	newGoalId,
 	type MemoryCandidate,
 } from "./memory.ts";
+import {
+	MAX_GOAL_SOURCE_BYTES,
+	MAX_GOAL_SOURCES,
+	type GoalSource,
+} from "./sources.ts";
 
-export const GOAL_STATE_ENTRY = "goal-harness-state";
+export const GOAL_STATE_ENTRY = "goala-state";
 
 export const PHASES = [
 	"idle",
@@ -49,9 +54,10 @@ export interface PlanStep {
 }
 
 export interface GoalState {
-	version: 1 | 2 | 3;
+	version: 1 | 2 | 3 | 4;
 	goalId: string;
 	objective: string;
+	sources: GoalSource[];
 	acceptanceCriteria: string[];
 	risks: string[];
 	phase: Phase;
@@ -145,11 +151,38 @@ function normalizePlan(value: unknown): PlanStep[] {
 	});
 }
 
+function normalizeSources(value: unknown): GoalSource[] {
+	if (!Array.isArray(value)) return [];
+	return value.slice(0, MAX_GOAL_SOURCES).flatMap((source) => {
+		if (
+			!isRecord(source) ||
+			typeof source.path !== "string" ||
+			source.path.length === 0 ||
+			source.path.length > 1000 ||
+			source.path.startsWith("/") ||
+			/^[A-Za-z]:[\\/]/.test(source.path) ||
+			source.path.split(/[\\/]/).includes("..") ||
+			typeof source.sha256 !== "string" ||
+			!/^[a-f0-9]{64}$/.test(source.sha256) ||
+			typeof source.bytes !== "number" ||
+			!Number.isInteger(source.bytes) ||
+			source.bytes < 0 ||
+			source.bytes > MAX_GOAL_SOURCE_BYTES
+		) return [];
+		return [{
+			path: source.path,
+			sha256: source.sha256,
+			bytes: source.bytes,
+		}];
+	});
+}
+
 export function emptyState(reviewPolicy: ReviewPolicy = "final"): GoalState {
 	return {
-		version: 3,
+		version: 4,
 		goalId: "",
 		objective: "",
+		sources: [],
 		acceptanceCriteria: [],
 		risks: [],
 		phase: "idle",
@@ -166,16 +199,17 @@ export function emptyState(reviewPolicy: ReviewPolicy = "final"): GoalState {
 }
 
 export function normalizeState(value: unknown): GoalState {
-	if (!isRecord(value) || ![1, 2, 3].includes(Number(value.version))) return emptyState();
+	if (!isRecord(value) || ![1, 2, 3, 4].includes(Number(value.version))) return emptyState();
 	const phase = PHASES.includes(value.phase as Phase) ? value.phase as Phase : "idle";
 	const pausedFrom = PHASES.includes(value.pausedFrom as Phase)
 		? value.pausedFrom as Phase
 		: undefined;
 	return {
 		...emptyState(),
-		version: 3,
+		version: 4,
 		goalId: optionalString(value.goalId) || newGoalId(),
 		objective: optionalString(value.objective) ?? "",
+		sources: normalizeSources(value.sources),
 		acceptanceCriteria: stringArray(value.acceptanceCriteria),
 		risks: stringArray(value.risks),
 		phase,

@@ -2,6 +2,8 @@
 
 ## 0.2.0 (unreleased)
 
+- Rename the package, repository, extension namespace, storage, environment
+  variables, and setup command to Goala (`pi-goala`).
 - Add `final` and `per-step` review policies.
 - Pause after each step with validation evidence for a human approval or
   revision gate, with optional independent `/verify`.
@@ -32,6 +34,8 @@
   naming and duplicate writes.
 - Split the extension entry point into clearly owned `tools`, `session`,
   `policy`, and `presenters` modules, with direct boundary tests.
+- Add authoritative goal-source documents with bounded project-local
+  resolution, persistent hashes, phase-wide references, and drift detection.
 - Document the original one-fixture benchmark as a retrieval experiment and
   define a multi-condition organic lifecycle evaluation.
 
@@ -54,5 +58,5 @@
 - Add verifier-gated local episodic memory with SQLite FTS5 retrieval.
 - Add redacted cold evidence, content-hash deduplication, and repository provenance.
 - Add namespaced, non-destructive configuration and storage.
-- Add `/harness-setup`, `/memory-status`, and goal lifecycle commands.
+- Add `/goala-setup`, `/memory-status`, and goal lifecycle commands.
 - Add static, packaging, and end-to-end evaluation fixtures.

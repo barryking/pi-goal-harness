@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-07-26",
+  "feature": "authoritative goal sources",
+  "condition": {
+    "memory": "off",
+    "freshSessions": true,
+    "reviewPolicy": "final",
+    "source": {
+      "path": "PRD.md",
+      "bytes": 713,
+      "sha256Prefix": "efb247ea6969"
+    }
+  },
+  "workflow": {
+    "acceptanceCriteria": 7,
+    "planSteps": 2,
+    "repairCycles": 0,
+    "finalVerifier": "pass"
+  },
+  "quality": {
+    "publicTests": {
+      "passed": 5,
+      "failed": 0
+    },
+    "externalHiddenContract": "pass",
+    "diffCheck": "pass",
+    "dependencyFree": true
+  },
+  "usage": {
+    "uncachedInput": 67336,
+    "output": 7315,
+    "cacheRead": 54784,
+    "cacheWrite": 0,
+    "reasoning": 1941,
+    "totalTokens": 129435,
+    "reportedCostUsd": 0.391665,
+    "apiCalls": 25
+  },
+  "deterministicContextCheck": {
+    "notionalSourceBytes": 48000,
+    "phasesChecked": [
+      "planning",
+      "executing",
+      "verifying",
+      "awaiting-review"
+    ],
+    "maximumContextCharactersPerPhase": 2000,
+    "fullSourceCopiedIntoContext": false
+  },
+  "caveats": [
+    "This is one live model sample, not a statistically powered benchmark.",
+    "The live usage total includes repository reads, tool calls, execution, and independent verification; it is not the metadata overhead alone.",
+    "The deterministic check establishes bounded handoff mechanics, while the live run establishes successful source use on one fixture."
+  ]
+}
