@@ -64,7 +64,7 @@ test("stores, redacts, retrieves, bounds, and deduplicates verified episodes", (
 	const first = storeVerifiedEpisode(episode, config);
 	assert.equal(first.inserted, true);
 	assert.ok(first.evidencePath);
-	assert.equal(statSync(join(root, "memory", "coala.sqlite3")).mode & 0o777, 0o600);
+	assert.equal(statSync(join(root, "memory", "goala.sqlite3")).mode & 0o777, 0o600);
 	assert.equal(statSync(first.evidencePath).mode & 0o777, 0o600);
 
 	const evidence = readFileSync(

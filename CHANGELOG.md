@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3 (2026-07-26)
+
+- Rename the memory database from `coala.sqlite3` to `goala.sqlite3` so local
+  storage consistently uses the product namespace.
+- Do not migrate or read the obsolete database filename.
+
 ## 0.3.2 (2026-07-26)
 
 - Document how `AGENTS.md` and Pi skills customise project and personal
