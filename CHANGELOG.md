@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-07-26)
 
 - Rename the package, repository, extension namespace, storage, environment
   variables, and setup command to Goala (`pi-goala`).

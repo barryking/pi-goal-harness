@@ -25,10 +25,10 @@ For a recoverable clean migration:
 4. Copy only `auth.json` from the backup into the new directory and keep it at
    `0600`. Do not copy session files, settings, prompts, skills, extensions, or
    previous workflow data into the clean installation.
-5. Install the current GitHub package:
+5. Install the current npm release:
 
    ```text
-   pi install git:github.com/barryking/pi-goala
+   pi install npm:pi-goala
    ```
 
 6. Confirm `pi list` shows the package, then start Pi and run
@@ -138,7 +138,7 @@ PI_GOALA_REVIEW_POLICY=final|per-step
 Remove the package using the same source identity used during installation:
 
 ```text
-pi remove git:github.com/barryking/pi-goala
+pi remove npm:pi-goala
 ```
 
 Package removal does not delete `~/.pi/agent/pi-goala/`. This preserves
