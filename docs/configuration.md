@@ -105,6 +105,13 @@ unchanged.
 }
 ```
 
+`fallbackExecutor` is not a separate lifecycle phase. It replaces the normal
+executor inside the repair loop after repeated verification failures.
+`afterRepairCycle` is the number of failed verification attempts that activates
+it. With the default value of `2`, the first repair still uses the normal
+executor; after the repaired work fails verification again, subsequent
+execution uses the fallback executor.
+
 Restart Pi or use `/reload` after manually editing the file.
 
 Version 1 configuration used one top-level `provider`. Goala reads that schema,

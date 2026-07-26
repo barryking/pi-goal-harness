@@ -12,6 +12,7 @@ import {
 	configPath,
 	configuredModels,
 	currentModelConfig,
+	formatConfig,
 	GOALA_SETUP_PRESETS,
 	loadConfig,
 	OPENAI_CODEX_PRESET,
@@ -79,6 +80,14 @@ test("supports a different provider and model for every role", () => {
 		{ provider: "provider-c", id: "step" },
 		{ provider: "provider-d", id: "verifier" },
 	]);
+	assert.match(
+		formatConfig(config),
+		/Fallback executor: provider-e\/repair · medium reasoning/,
+	);
+	assert.match(
+		formatConfig(config),
+		/Fallback executor activates after: 2 failed verification attempts/,
+	);
 });
 
 test("migrates version 1 single-provider configuration without retaining the old field", () => {

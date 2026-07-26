@@ -39,7 +39,7 @@ pi install npm:pi-goala
 Pin a release for reproducible team installations:
 
 ```text
-pi install npm:pi-goala@0.3.1
+pi install npm:pi-goala@0.3.2
 ```
 
 Pi's package command both downloads Goala and registers its extension. A plain
@@ -49,7 +49,7 @@ supported installation path.
 From GitHub or a local checkout:
 
 ```text
-pi install git:github.com/barryking/pi-goala@v0.3.1
+pi install git:github.com/barryking/pi-goala@v0.3.2
 pi install /absolute/path/to/pi-goala
 ```
 
@@ -317,6 +317,7 @@ Use this hierarchy:
 | Detailed architecture, domain rules, and decisions | Versioned repository docs, linked from `AGENTS.md` |
 | Product direction and future milestones | `PROJECT_GOAL.md` or `ROADMAP.md` |
 | Personal defaults that apply to every repository | `~/.pi/agent/AGENTS.md` |
+| Repeatable procedures such as commit/PR, release, deployment, or framework workflows | Pi skills, referenced from `AGENTS.md` when mandatory |
 | Distilled experience from successfully completed work | Verified Goala episodic memory |
 
 Pi loads repository and global `AGENTS.md` files into every fresh Goala phase.
@@ -357,6 +358,22 @@ can include it as an evidence-backed episode finding. Important decisions
 should still be committed to the repository; future memory is bounded,
 relevance-ranked, and deliberately treated as untrusted evidence.
 
+### Customise your workflow
+
+Goala works with a standard Pi installation and provides the goal, planning,
+execution, verification, and memory lifecycle. It does not prescribe every
+project procedure.
+
+Put concise, always-applicable rules in the repository's `AGENTS.md`, and put
+personal defaults that apply across repositories in
+`~/.pi/agent/AGENTS.md`. Use Pi skills for detailed, repeatable procedures such
+as commit and pull-request handling, releases, deployments, migrations, or
+framework-specific workflows.
+
+When a skill is mandatory for particular work, reference it from `AGENTS.md`.
+This keeps the instructions loaded into every phase short while allowing the
+full procedure to be loaded only when relevant.
+
 ### When direction changes
 
 Use `/goal revise <feedback>` when the current checkpoint needs rework. Use
@@ -370,13 +387,17 @@ new bounded goal when the desired outcome has materially changed.
 
 The recommended OpenAI Codex preset is:
 
-| Phase | Model | Reasoning |
+| Model role | Model | Reasoning |
 |---|---|---:|
-| Plan | `gpt-5.6-sol` | medium |
-| Execute | `gpt-5.6-luna` | medium |
-| Optional step verification | `gpt-5.6-luna` | medium |
-| Verify | `gpt-5.6-sol` | medium |
-| Repeated repair | `gpt-5.6-terra` | medium |
+| Planner | `gpt-5.6-sol` | medium |
+| Executor | `gpt-5.6-luna` | medium |
+| Optional step verifier | `gpt-5.6-luna` | medium |
+| Final verifier | `gpt-5.6-sol` | medium |
+| Fallback executor | `gpt-5.6-terra` | medium |
+
+Repeated repair is not a separate lifecycle phase. It loops back into
+execution after verification fails. The fallback executor replaces the normal
+executor only after the configured number of failed verification attempts.
 
 If those models are unavailable, Goala can use the model that was active
 when Pi started. Run `/goala-setup current` to persist that portable

@@ -1,8 +1,19 @@
 # Changelog
 
+## 0.3.2 (2026-07-26)
+
+- Document how `AGENTS.md` and Pi skills customise project and personal
+  workflows around Goala's lifecycle.
+- Describe planning, execution, and verification models as roles rather than
+  incorrectly presenting the repair loop as a separate phase.
+- Clarify the fallback executor activation threshold and distinguish it from
+  unavailable-model fallback.
+- Add direct and extension-level routing tests for every model role, including
+  the fallback activation boundary.
+
 ## 0.3.1 (2026-07-26)
 
-- Make each phase default to keeping its current model configuration.
+- Make each role default to keeping its current model configuration.
 - Separate reasoning-effort changes from provider/model changes.
 - Select provider, then a filtered model, while skipping provider selection
   when only one authenticated provider is available.
@@ -10,7 +21,7 @@
 
 ## 0.3.0 (2026-07-26)
 
-- Add interactive per-phase provider, model, and reasoning selection from Pi's
+- Add interactive per-role provider, model, and reasoning selection from Pi's
   authenticated available-model registry.
 - Support mixed-provider planner, executor, step-verifier, final-verifier, and
   repeated-repair roles.
@@ -69,7 +80,7 @@
 
 ## 0.1.0
 
-- Add persistent goal, plan, execution, verification, and bounded repair phases.
+- Add persistent goal, plan, execution, verification, and bounded repair loops.
 - Add configurable planner, executor, verifier, and repair model roles.
 - Add fresh planning/execution sessions and logical verifier context isolation.
 - Add verifier-gated local episodic memory with SQLite FTS5 retrieval.

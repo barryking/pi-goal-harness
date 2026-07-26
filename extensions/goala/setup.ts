@@ -21,7 +21,7 @@ const MODEL_ROLES: ReadonlyArray<{ key: ModelRole; label: string }> = [
 	{ key: "executor", label: "Executor" },
 	{ key: "stepVerifier", label: "Step verifier" },
 	{ key: "verifier", label: "Final verifier" },
-	{ key: "fallbackExecutor", label: "Repair fallback" },
+	{ key: "fallbackExecutor", label: "Fallback executor" },
 ];
 
 const THINKING_LEVELS: readonly ThinkingLevel[] = [
@@ -38,7 +38,7 @@ const KEEP_CURRENT = "Keep current";
 const CHANGE_REASONING = "Change reasoning effort";
 const CHANGE_MODEL = "Change provider or model";
 const SAVE_CONFIGURATION = "Save configuration";
-const EDIT_PHASE = "Edit a phase";
+const EDIT_ROLE = "Edit a role";
 const CANCEL = "Cancel";
 
 function titleCase(value: string): string {
@@ -225,8 +225,12 @@ async function configureRole(
 		...(currentModel?.reasoning ? [CHANGE_REASONING] : []),
 		CHANGE_MODEL,
 	];
+	const activation =
+		role.key === "fallbackExecutor"
+			? `\nActivates after ${config.fallbackExecutor.afterRepairCycle} failed verification attempts`
+			: "";
 	const action = await ctx.ui.select(
-		`${role.label}\nCurrent: ${profileLabel(ctx, available, current)}`,
+		`${role.label}${activation}\nCurrent: ${profileLabel(ctx, available, current)}`,
 		actions,
 	);
 	if (!action) return false;
@@ -251,8 +255,13 @@ function reviewSummary(
 	config: GoalaConfig,
 ): string {
 	return MODEL_ROLES.map(
-		(role) =>
-			`${role.label}: ${profileLabel(ctx, available, config[role.key])}`,
+		(role) => {
+			const label =
+				role.key === "fallbackExecutor"
+					? `${role.label} (after ${config.fallbackExecutor.afterRepairCycle} failed verification attempts)`
+					: role.label;
+			return `${label}: ${profileLabel(ctx, available, config[role.key])}`;
+		},
 	).join("\n");
 }
 
@@ -261,7 +270,7 @@ export async function selectModelRoles(
 	current: GoalaConfig,
 ): Promise<GoalaConfig | undefined> {
 	if (!ctx.hasUI) {
-		ctx.ui.notify("Per-phase model setup requires interactive Pi.", "warning");
+		ctx.ui.notify("Per-role model setup requires interactive Pi.", "warning");
 		return undefined;
 	}
 
@@ -287,13 +296,13 @@ export async function selectModelRoles(
 	while (true) {
 		const action = await ctx.ui.select(
 			`Review Goala configuration\n${reviewSummary(ctx, available, proposed)}`,
-			[SAVE_CONFIGURATION, EDIT_PHASE, CANCEL],
+			[SAVE_CONFIGURATION, EDIT_ROLE, CANCEL],
 		);
 		if (!action || action === CANCEL) return undefined;
 		if (action === SAVE_CONFIGURATION) return proposed;
 
 		const selectedRole = await ctx.ui.select(
-			"Choose a phase to edit",
+			"Choose a role to edit",
 			MODEL_ROLES.map((role) => role.label),
 		);
 		if (!selectedRole) return undefined;
