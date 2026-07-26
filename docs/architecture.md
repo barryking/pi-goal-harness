@@ -23,6 +23,7 @@ own one concern:
 | `workflow.ts` | Goal-state types, normalization, and invariants |
 | `memory.ts` | Verified episodic storage and retrieval |
 | `recovery.ts` | Discovery of unfinished goals in saved Pi sessions |
+| `setup.ts` | Interactive available-model selection for each lifecycle role |
 | `config.ts` | Namespaced configuration and model-role presets |
 
 Simple concern names are intentional: the directory already supplies the
@@ -122,7 +123,10 @@ planning and final verification, a faster model for implementation and routine
 step verification, and a balanced fallback after repeated repair. Independent
 step context and the final strong verifier preserve the trust boundary without
 paying the strongest-model cost at every human checkpoint. A portable
-current-model preset is available for other providers.
+current-model preset is available for other providers. The advanced setup
+enumerates Pi's authenticated available models and stores provider, model, and
+reasoning independently for every role; mixed-provider workflows therefore use
+the same phase-routing path as the bundled preset.
 
 If a configured model cannot be resolved and current-model fallback is
 enabled, Goala uses the model that was active when the extension session

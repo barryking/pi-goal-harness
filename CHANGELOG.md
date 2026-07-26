@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 (2026-07-26)
+
+- Add interactive per-phase provider, model, and reasoning selection from Pi's
+  authenticated available-model registry.
+- Support mixed-provider planner, executor, step-verifier, final-verifier, and
+  repeated-repair roles.
+- Migrate version 1 single-provider configuration to the version 2 per-role
+  schema without retaining the obsolete top-level provider.
+
 ## 0.2.0 (2026-07-26)
 
 - Rename the package, repository, extension namespace, storage, environment
