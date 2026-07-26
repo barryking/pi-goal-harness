@@ -128,7 +128,7 @@ function paths(): MemoryPaths {
 		join(goalaHome(), "memory");
 	return {
 		root,
-		database: join(root, "coala.sqlite3"),
+		database: join(root, "goala.sqlite3"),
 		evidence: join(root, "evidence"),
 	};
 }

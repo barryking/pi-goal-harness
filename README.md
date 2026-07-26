@@ -39,7 +39,7 @@ pi install npm:pi-goala
 Pin a release for reproducible team installations:
 
 ```text
-pi install npm:pi-goala@0.3.2
+pi install npm:pi-goala@0.3.3
 ```
 
 Pi's package command both downloads Goala and registers its extension. A plain
@@ -49,7 +49,7 @@ supported installation path.
 From GitHub or a local checkout:
 
 ```text
-pi install git:github.com/barryking/pi-goala@v0.3.2
+pi install git:github.com/barryking/pi-goala@v0.3.3
 pi install /absolute/path/to/pi-goala
 ```
 
@@ -461,7 +461,7 @@ Data is namespaced under:
 ~/.pi/agent/pi-goala/
 ├── config.json
 └── memory/
-    ├── coala.sqlite3
+    ├── goala.sqlite3
     └── evidence/<goal-id>/  # only when cold evidence is enabled
 ```
 
