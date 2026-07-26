@@ -6,6 +6,28 @@ Pi Goal Harness is one Pi extension with three responsibilities:
 2. route work through plan, execute, verify, and repair phases;
 3. retrieve and promote bounded verified memory.
 
+## Module boundaries
+
+The extension entry point is the workflow coordinator. Supporting modules each
+own one concern:
+
+| Module | Responsibility |
+|---|---|
+| `index.ts` | Commands, phase transitions, model routing, and event orchestration |
+| `tools.ts` | Tool schemas and state transitions caused by tool submissions |
+| `session.ts` | Fresh-session handoff and logical phase context slicing |
+| `policy.ts` | Read-only and high-risk tool-call enforcement |
+| `presenters.ts` | Status, plan, and widget rendering |
+| `context.ts` | Minimal phase-specific model context |
+| `workflow.ts` | Goal-state types, normalization, and invariants |
+| `memory.ts` | Verified episodic storage and retrieval |
+| `recovery.ts` | Discovery of unfinished goals in saved Pi sessions |
+| `config.ts` | Namespaced configuration and model-role presets |
+
+Simple concern names are intentional: the directory already supplies the
+`goal-harness` context, so prefixes such as `phase-` and suffixes such as
+`-boundary` add length without clarifying ownership.
+
 ## Four-memory placement
 
 The CoALA-inspired types are separated by responsibility:
