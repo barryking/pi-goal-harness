@@ -34,8 +34,32 @@ node eval/rpc-goal-runner.mjs \
   --fresh-sessions on \
   --review-policy final \
   --step-verification executor-evidence \
-  --extension /absolute/path/to/extensions/goal-harness/index.ts
+  --extension /absolute/path/to/extensions/goala/index.ts
 ```
+
+To evaluate authoritative PRD retention, copy the retained source fixture into
+the temporary repository and register it:
+
+```text
+cp eval/fixtures/window-source-prd.md <fixture-repo>/PRD.md
+
+node eval/rpc-goal-runner.mjs \
+  --cwd <fixture-repo> \
+  --objective "Implement the documented window-normalization contract." \
+  --source PRD.md \
+  --output <source-result.json> \
+  --session-dir <source-sessions> \
+  --memory off \
+  --fresh-sessions on \
+  --review-policy final \
+  --extension /absolute/path/to/extensions/goala/index.ts
+```
+
+The result records the captured source metadata in `goal.sources`. Run the
+external hidden check afterward. Compare its quality and usage with a control
+run from a clean fixture. Do not leave the PRD in the control repository,
+because an unregistered file discovered during exploration would contaminate
+the source-registration comparison.
 
 Use `--review-policy per-step` to exercise human-review checkpoints with
 executor validation evidence. Add `--step-verification independent` to invoke
@@ -61,4 +85,6 @@ Do not commit temporary authentication or raw session evidence.
 The sanitized summary from the verifier-grounded formation and organic-reuse
 regression is retained in
 [`results/2026-07-25-verifier-grounded-memory.json`](results/2026-07-25-verifier-grounded-memory.json).
+The source-backed PRD regression is retained in
+[`results/2026-07-26-authoritative-source.json`](results/2026-07-26-authoritative-source.json).
 Raw sessions remain ephemeral and are not committed.

@@ -1,8 +1,8 @@
-# Pi Goal Harness
+# Goala
 
-An installable plan → execute → independently verify workflow for
-[Pi](https://pi.dev), with phase-isolated context and verifier-gated episodic
-memory.
+Goala—Goal-Oriented Agent Lifecycle Architecture—is an installable
+plan → execute → independently verify workflow for [Pi](https://pi.dev), with
+phase-isolated context and verifier-gated episodic memory.
 
 ```text
 goal → recall verified memory → read-only plan → explicit approval
@@ -17,7 +17,7 @@ execute one step → run checks → human approve/revise → next step
                               └→ optional independent /verify
 ```
 
-Pi Goal Harness turns an outcome into a persistent, testable workflow:
+Goala turns an outcome into a persistent, testable workflow:
 
 - a capable model inspects the repository and proposes acceptance criteria;
 - implementation waits for explicit `/execute` approval;
@@ -33,7 +33,7 @@ Pi 0.82 or newer and Node.js 22.19 or newer are recommended.
 From the latest GitHub `main`:
 
 ```text
-pi install git:github.com/barryking/pi-goal-harness
+pi install git:github.com/barryking/pi-goala
 ```
 
 Release tags are recommended for reproducible team installations. Version
@@ -43,20 +43,20 @@ its tag should be used once the release is published.
 From a local checkout:
 
 ```text
-pi install /absolute/path/to/pi-goal-harness
+pi install /absolute/path/to/pi-goala
 ```
 
 After a future npm release:
 
 ```text
-pi install npm:pi-goal-harness
+pi install npm:pi-goala
 ```
 
 Pi packages execute with the permissions of the user running Pi. Review the
 source before installing any extension.
 
 Existing Pi installations do not normally need to be reset. If you are
-replacing a hand-maintained harness and want a clean migration, preserve the
+replacing a hand-maintained workflow and want a clean migration, preserve the
 whole Pi agent directory before carrying only authentication into the new
 installation. Old sessions remain in the backup for rollback and are not
 imported into the clean installation. See
@@ -68,7 +68,7 @@ Open Pi in the project you want to change:
 
 ```text
 pi
-/harness-setup
+/goala-setup
 /goal Describe the finished outcome and important constraints
 ```
 
@@ -97,6 +97,8 @@ Useful commands:
 
 ```text
 /goal <objective>       Start a persistent goal
+/goal --source <path> -- <objective>
+                        Start a goal with an authoritative requirements file
 /goal status            Show the active goal or a recoverable saved goal
 /goal approve           Accept the reviewed step and continue
 /goal revise <feedback> Return the reviewed step for revision
@@ -111,9 +113,52 @@ Useful commands:
 /memory-status          Show memory health and recent active/retired episodes
 /memory retire <id>     Exclude an obsolete episode from recall
 /memory restore <id>    Restore a retired episode
-/harness-setup          Choose a model preset
-/harness-setup status   Show effective configuration
+/goala-setup            Choose a model preset
+/goala-setup status     Show effective configuration
 ```
+
+## Detailed PRDs and authoritative sources
+
+Do not paste a long PRD into the goal objective. Keep it as a versioned project
+file and register it as an authoritative source:
+
+```text
+/goal --source docs/PRD.md -- Implement the offline export workflow
+```
+
+Multiple sources are supported, including quoted paths:
+
+```text
+/goal --source "docs/Product Requirements.md" --source docs/architecture.md -- Implement the import workflow
+```
+
+Goala records each project-relative path, byte count, and SHA-256 hash in the
+persistent goal state. It does not copy the document into every model prompt.
+Instead, every active phase receives the bounded references and must read the
+current files before acting:
+
+- planning must turn all source requirements into acceptance criteria and
+  testable steps;
+- execution must preserve the source contract;
+- checkpoint review uses the sources as its requirements reference;
+- final verification independently checks the current sources as well as the
+  submitted acceptance criteria.
+
+If a source changes or disappears after goal creation, Goala injects an
+explicit source-drift warning. The agent must surface the discrepancy rather
+than silently reinterpret the approved contract. Plan, progress, checkpoint,
+and final-verification submissions are rejected until the captured file is
+restored or a replacement goal explicitly captures the new contract.
+
+Sources must be UTF-8 regular files inside the current project. A goal may
+reference at most eight files, each no larger than 1,000,000 bytes. Paths with
+spaces may be quoted. The `--` separator before the objective is required.
+
+The source documents remain ordinary repository files and should be committed
+when they are part of the product contract. `/goal clear` removes the active
+reference set but does not delete those files or historical Pi session entries.
+Register stable inputs, not files the implementation is expected to rewrite;
+an intentional contract revision should start a replacement goal.
 
 ## Resuming after exiting Pi
 
@@ -135,7 +180,7 @@ pi -r
 
 If you already opened a new session, run `/goal-status`. Status is rendered as
 a persistent TUI-only entry and does not enter model context. When there is no
-goal in the current session, the harness searches recent saved sessions for
+goal in the current session, Goala searches recent saved sessions for
 the same working directory, ignores completed and superseded goal states, and
 shows the most recent recoverable goal with an exact command:
 
@@ -159,7 +204,7 @@ working directory.
 
 ## Choosing a workflow
 
-The harness is most useful when the desired outcome can be stated before
+Goala is most useful when the desired outcome can be stated before
 implementation begins. Choose the lightest flow that gives the work enough
 control:
 
@@ -171,7 +216,7 @@ control:
 | Greenfield, product, or visual work | `per-step`, with human review of each meaningful product milestone |
 | Security, data migration, or other high-risk work | `per-step`; use `/verify` at the risky checkpoints and inspect the real diff or environment |
 | Unclear or exploratory request | Plan and discuss first; do not run `/execute` until the outcome and acceptance criteria are credible |
-| Multi-release or open-ended objective | Keep the parent roadmap in the repository and run one bounded harness goal per milestone |
+| Multi-release or open-ended objective | Keep the parent roadmap in the repository and run one bounded Goala goal per milestone |
 
 ### Small bug or bounded refactor
 
@@ -222,7 +267,7 @@ accessibility/resilience pass. Avoid a long list of mechanical setup tasks.
 Use `per-step` so you can run the app and judge the direction before approving
 the next milestone.
 
-The harness can verify files, tests, and declared checks, but subjective claims
+Goala can verify files, tests, and declared checks, but subjective claims
 such as “best looking” still need human review in the real UI. Treat `/verify`
 as a technical second opinion, not a substitute for browser, device, or
 usability review.
@@ -243,7 +288,7 @@ operating-system sandbox and it does not make a risky command safe.
 
 ### An overarching goal
 
-Do not make one harness goal carry an indefinite product roadmap. The harness
+Do not make one Goala goal carry an indefinite product roadmap. Goala
 tracks one active goal in the current Pi session tree, and durable memory is
 written only after that goal passes final verification. Instead:
 
@@ -259,20 +304,21 @@ repository remains the source of truth across sessions.
 
 ### Where stack, architecture, and guidance belong
 
-Harness memory is verified history, not the place to configure a project.
+Goala memory is verified history, not the place to configure a project.
 Use this hierarchy:
 
 | Information | Put it here |
 |---|---|
-| Requirement or constraint for the current change | The `/goal` objective |
+| Concise outcome for the current change | The `/goal` objective |
+| Detailed PRD or one-goal requirements contract | A versioned file registered with `/goal --source` |
 | Stable stack, coding conventions, required commands, and safety rules | The repository's `AGENTS.md` |
 | Detailed architecture, domain rules, and decisions | Versioned repository docs, linked from `AGENTS.md` |
 | Product direction and future milestones | `PROJECT_GOAL.md` or `ROADMAP.md` |
 | Personal defaults that apply to every repository | `~/.pi/agent/AGENTS.md` |
-| Distilled experience from successfully completed work | Verified harness episodic memory |
+| Distilled experience from successfully completed work | Verified Goala episodic memory |
 
-Pi loads repository and global `AGENTS.md` files into every fresh harness
-phase. Keep them concise because repeated instructions consume context in
+Pi loads repository and global `AGENTS.md` files into every fresh Goala phase.
+Keep them concise because repeated instructions consume context in
 planning, execution, and verification. Put detailed material in files such as
 `docs/architecture.md` or Architecture Decision Records, and tell the agent
 when to read them:
@@ -330,10 +376,10 @@ The recommended OpenAI Codex preset is:
 | Verify | `gpt-5.6-sol` | medium |
 | Repeated repair | `gpt-5.6-terra` | medium |
 
-If those models are unavailable, the harness can use the model that was active
-when Pi started. Run `/harness-setup current` to persist that portable
+If those models are unavailable, Goala can use the model that was active
+when Pi started. Run `/goala-setup current` to persist that portable
 single-model configuration. Advanced users can configure each role in
-`~/.pi/agent/pi-goal-harness/config.json`.
+`~/.pi/agent/pi-goala/config.json`.
 
 The package does not overwrite Pi's `settings.json`, model list, skills,
 prompts, other extensions, or authentication.
@@ -346,10 +392,10 @@ The four CoALA memory types have distinct homes:
 |---|---|
 | Working | Bounded current phase packet |
 | Semantic | `AGENTS.md`, architecture docs, ADRs, and other versioned project knowledge |
-| Procedural | Pi skills and the executable harness workflow |
+| Procedural | Pi skills and the executable Goala workflow |
 | Episodic | Distilled, independently verified prior-task episodes in local SQLite |
 
-The harness owns working-memory assembly and episodic recall. It does not copy
+Goala owns working-memory assembly and episodic recall. It does not copy
 semantic or procedural sources of truth into its database.
 
 Episodic memory is local, bounded, and advisory:
@@ -380,7 +426,7 @@ discussion, or replace version-controlled project documentation. Run
 Data is namespaced under:
 
 ```text
-~/.pi/agent/pi-goal-harness/
+~/.pi/agent/pi-goala/
 ├── config.json
 └── memory/
     ├── coala.sqlite3
@@ -392,7 +438,7 @@ evidence are `0600`.
 
 ## Context isolation
 
-The harness does not forward the complete planning conversation into
+Goala does not forward the complete planning conversation into
 execution. Interactive planning and execution use separate Pi sessions with a
 small persisted handoff. In `per-step` review, every approved step starts the
 next executor session with only the remaining plan and relevant goal state.
@@ -473,7 +519,7 @@ procedural memory, and distilled cross-session experience for episodic memory.
 Public implementation notes from
 [Entire's checkpoint architecture](https://github.com/entireio/cli/blob/ec5d9a7610039703017e4fa8c34a070ce47dc3b3/docs/architecture/sessions-and-checkpoints.md#L196-L255)
 informed the general ideas of durable episode provenance, stable identifiers,
-and linking evidence to repository state. Pi Goal Harness is an independent
+and linking evidence to repository state. Goala is an independent
 implementation and has no Entire runtime, service, SDK, storage-format, or
 installation dependency.
 

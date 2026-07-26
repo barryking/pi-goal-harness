@@ -1,4 +1,9 @@
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { MemoryConfig } from "./memory.ts";
@@ -16,13 +21,13 @@ export interface ModelIdentity {
 	id: string;
 }
 
-export interface HarnessSetupPreset {
+export interface GoalaSetupPreset {
 	id: string;
 	label: string;
-	create(currentModel?: ModelIdentity): HarnessConfig | undefined;
+	create(currentModel?: ModelIdentity): GoalaConfig | undefined;
 }
 
-export interface HarnessConfig {
+export interface GoalaConfig {
 	configVersion: 1;
 	provider: string;
 	planner: ModelProfile;
@@ -38,7 +43,7 @@ export interface HarnessConfig {
 	memory: MemoryConfig;
 }
 
-export const OPENAI_CODEX_PRESET: HarnessConfig = {
+export const OPENAI_CODEX_PRESET: GoalaConfig = {
 	configVersion: 1,
 	provider: "openai-codex",
 	planner: { model: "gpt-5.6-sol", thinkingLevel: "medium" },
@@ -61,15 +66,15 @@ export const OPENAI_CODEX_PRESET: HarnessConfig = {
 	},
 };
 
-export function harnessHome(): string {
-	return process.env.PI_GOAL_HARNESS_HOME || join(getAgentDir(), "pi-goal-harness");
+export function goalaHome(): string {
+	return process.env.PI_GOALA_HOME || join(getAgentDir(), "pi-goala");
 }
 
 export function configPath(): string {
-	return join(harnessHome(), "config.json");
+	return join(goalaHome(), "config.json");
 }
 
-function mergeConfig(parsed: Partial<HarnessConfig>): HarnessConfig {
+function mergeConfig(parsed: Partial<GoalaConfig>): GoalaConfig {
 	return {
 		...OPENAI_CODEX_PRESET,
 		...parsed,
@@ -87,26 +92,29 @@ function mergeConfig(parsed: Partial<HarnessConfig>): HarnessConfig {
 	};
 }
 
-export function loadConfig(): HarnessConfig {
+export function loadConfig(): GoalaConfig {
 	let config = OPENAI_CODEX_PRESET;
 	try {
-		const parsed = JSON.parse(readFileSync(configPath(), "utf8")) as Partial<HarnessConfig>;
+		const parsed = JSON.parse(readFileSync(configPath(), "utf8")) as Partial<GoalaConfig>;
 		config = mergeConfig(parsed);
 	} catch {
 		config = mergeConfig({});
 	}
 
-	if (process.env.PI_HARNESS_MEMORY_ENABLED === "0") config.memory.enabled = false;
-	if (process.env.PI_HARNESS_MEMORY_ENABLED === "1") config.memory.enabled = true;
-	if (process.env.PI_HARNESS_FRESH_SESSIONS === "0") config.freshSessionPerPhase = false;
-	if (process.env.PI_HARNESS_FRESH_SESSIONS === "1") config.freshSessionPerPhase = true;
-	if (process.env.PI_HARNESS_REVIEW_POLICY === "final") config.reviewPolicy = "final";
-	if (process.env.PI_HARNESS_REVIEW_POLICY === "per-step") config.reviewPolicy = "per-step";
+	const memoryEnabled = process.env.PI_GOALA_MEMORY_ENABLED;
+	if (memoryEnabled === "0") config.memory.enabled = false;
+	if (memoryEnabled === "1") config.memory.enabled = true;
+	const freshSessions = process.env.PI_GOALA_FRESH_SESSIONS;
+	if (freshSessions === "0") config.freshSessionPerPhase = false;
+	if (freshSessions === "1") config.freshSessionPerPhase = true;
+	const reviewPolicy = process.env.PI_GOALA_REVIEW_POLICY;
+	if (reviewPolicy === "final") config.reviewPolicy = "final";
+	if (reviewPolicy === "per-step") config.reviewPolicy = "per-step";
 	return config;
 }
 
-export function writeConfig(config: HarnessConfig): string {
-	const home = harnessHome();
+export function writeConfig(config: GoalaConfig): string {
+	const home = goalaHome();
 	mkdirSync(home, { recursive: true, mode: 0o700 });
 	const target = configPath();
 	writeFileSync(target, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
@@ -118,7 +126,7 @@ export function currentModelConfig(
 	provider: string,
 	model: string,
 	thinkingLevel: ThinkingLevel = "medium",
-): HarnessConfig {
+): GoalaConfig {
 	return {
 		...OPENAI_CODEX_PRESET,
 		provider,
@@ -130,11 +138,11 @@ export function currentModelConfig(
 	};
 }
 
-function cloneConfig(config: HarnessConfig): HarnessConfig {
+function cloneConfig(config: GoalaConfig): GoalaConfig {
 	return structuredClone(config);
 }
 
-export const HARNESS_SETUP_PRESETS: readonly HarnessSetupPreset[] = [
+export const GOALA_SETUP_PRESETS: readonly GoalaSetupPreset[] = [
 	{
 		id: "openai",
 		label: "Recommended OpenAI Codex preset",
@@ -150,7 +158,7 @@ export const HARNESS_SETUP_PRESETS: readonly HarnessSetupPreset[] = [
 	},
 ];
 
-export function configuredModels(config: HarnessConfig): ModelIdentity[] {
+export function configuredModels(config: GoalaConfig): ModelIdentity[] {
 	const identities = [
 		config.planner,
 		config.executor,
@@ -167,7 +175,7 @@ export function configuredModels(config: HarnessConfig): ModelIdentity[] {
 	);
 }
 
-export function formatConfig(config: HarnessConfig): string {
+export function formatConfig(config: GoalaConfig): string {
 	return [
 		`Config: ${configPath()}`,
 		`Planner: ${config.provider}/${config.planner.model}:${config.planner.thinkingLevel}`,

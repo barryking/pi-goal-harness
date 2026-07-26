@@ -1,6 +1,6 @@
 # Architecture
 
-Pi Goal Harness is one Pi extension with three responsibilities:
+Goala is one Pi extension with three responsibilities:
 
 1. persist a goal and its acceptance contract;
 2. route work through plan, execute, verify, and repair phases;
@@ -16,6 +16,7 @@ own one concern:
 | `index.ts` | Commands, phase transitions, model routing, and event orchestration |
 | `tools.ts` | Tool schemas and state transitions caused by tool submissions |
 | `session.ts` | Fresh-session handoff and logical phase context slicing |
+| `sources.ts` | Safe project-local source resolution, hashing, and drift detection |
 | `policy.ts` | Read-only and high-risk tool-call enforcement |
 | `presenters.ts` | Status, plan, and widget rendering |
 | `context.ts` | Minimal phase-specific model context |
@@ -25,8 +26,11 @@ own one concern:
 | `config.ts` | Namespaced configuration and model-role presets |
 
 Simple concern names are intentional: the directory already supplies the
-`goal-harness` context, so prefixes such as `phase-` and suffixes such as
+`goala` context, so prefixes such as `phase-` and suffixes such as
 `-boundary` add length without clarifying ownership.
+
+Public commands, saved-session entries, phase markers, storage, and environment
+variables all use the Goala namespace.
 
 ## Four-memory placement
 
@@ -71,8 +75,9 @@ clean planning session -- submit_plan --> awaiting explicit /execute
 ```
 
 Goal state is stored as Pi custom session entries. It includes the objective,
-criteria, review policy, plan, step-review evidence, progress, repair counts,
-final verification report, memory references, and session evidence paths.
+authoritative source paths and hashes, criteria, review policy, plan,
+step-review evidence, progress, repair counts, final verification report,
+memory references, and session evidence paths.
 
 The state remains attached to the saved Pi session tree. A plain `pi` launch
 starts a new session rather than automatically adopting another session's
@@ -94,6 +99,15 @@ coexist.
 | Verification | Objective, criteria, verification methods, current observations | Recalled memory and executor claims |
 | Repair | Remaining work and latest defects | Superseded completion evidence |
 
+Authoritative source documents are represented by project-relative paths,
+byte counts, and SHA-256 hashes. Their full contents are not copied into phase
+context. Each active phase receives the bounded references and reads the
+current files through Pi's normal repository tools. Before each agent turn,
+Goala compares current content with the captured hash; missing or changed
+sources create an explicit contract-drift warning and block workflow
+submissions. Restoring the captured file or starting a replacement goal is an
+explicit contract decision.
+
 Planning and execution use physical Pi session replacement in interactive/RPC
 mode. Automatic verification occurs inside the execution session because
 replacing a session from an active model callback can deadlock the runtime. A
@@ -111,14 +125,14 @@ paying the strongest-model cost at every human checkpoint. A portable
 current-model preset is available for other providers.
 
 If a configured model cannot be resolved and current-model fallback is
-enabled, the harness uses the model that was active when the extension session
+enabled, Goala uses the model that was active when the extension session
 started and displays a warning.
 
 ## Completion invariant
 
 A goal can enter `complete` only when:
 
-- the harness is in verification phase;
+- Goala is in verification phase;
 - every plan step is completed and, under `per-step`, human-approved;
 - the verifier submits at least one check;
 - every check has status `pass`;

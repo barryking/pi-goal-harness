@@ -23,6 +23,9 @@ The deterministic suite covers:
 - repository provenance labelling and memory health diagnostics;
 - pruning of completed execution evidence;
 - verifier memory isolation;
+- bounded authoritative-source references in every active phase without
+  copying full PRD contents;
+- project-boundary, UTF-8, file-size, source-count, and source-drift handling;
 - per-step validation evidence and human approval gates;
 - optional independent step verification;
 - revision feedback and pause/resume at a review checkpoint;
@@ -32,6 +35,39 @@ The deterministic suite covers:
 
 The synthetic legacy executor packet measured 5,671 characters. The isolated
 packet measured 1,437 characters, a 74.7% reduction.
+
+The authoritative-source regression uses a 48,000-byte notional PRD. Across
+planning, execution, verification, and checkpoint review, each generated
+phase context remains below 2,000 characters and contains the path plus a
+12-character hash prefix, but not the PRD body. This demonstrates bounded
+handoff mechanics; the live source fixture below tests whether a model reads
+and implements the referenced contract.
+
+### Authoritative-source live regression
+
+A memory-disabled run registered the retained window-normalization PRD as an
+authoritative source. The planner produced seven source-derived acceptance
+criteria and two implementation steps. Execution completed with zero repairs;
+the independent verifier matched the current PRD hash to the captured hash.
+
+| Measure | Result |
+|---|---:|
+| Public tests | 5/5 pass |
+| External hidden contract | PASS |
+| Independent verifier | PASS |
+| Repair cycles | 0 |
+| Uncached input | 67,336 |
+| Output | 7,315 |
+| Cache read | 54,784 |
+| Total tokens | 129,435 |
+| Reported cost | $0.391665 |
+| API calls | 25 |
+
+This is one model sample. It establishes that the reference survives physical
+phase handoffs and is used successfully; it does not establish average token
+cost. The source body was read on demand rather than copied into each phase
+context. The sanitized result is retained under
+`eval/results/2026-07-26-authoritative-source.json`.
 
 ## Paired live evaluation
 

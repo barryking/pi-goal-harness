@@ -2,7 +2,7 @@
 
 ## Trust model
 
-Pi Goal Harness is a Pi extension and therefore runs with the permissions of
+Goala is a Pi extension and therefore runs with the permissions of
 the user who starts Pi. Its command checks and phase-specific tool lists reduce
 accidental changes; they are not an operating-system sandbox.
 
@@ -11,10 +11,10 @@ sandbox when the repository or task requires a stronger boundary.
 
 ## Memory and secrets
 
-Verified episodic memory is stored locally under
-`~/.pi/agent/pi-goal-harness/` by default. Full redacted transcript evidence is
-opt-in. Common API keys, bearer tokens, password assignments, private keys, and
-credential-bearing database URLs are redacted before persistence.
+Verified episodic memory is stored locally under `~/.pi/agent/pi-goala/` by
+default. Full redacted transcript evidence is opt-in. Common API keys, bearer
+tokens, password assignments, private keys, and credential-bearing database
+URLs are redacted before persistence.
 
 Pattern-based redaction cannot guarantee removal of every possible secret.
 Do not place credentials in goals, prompts, source files, test output, or

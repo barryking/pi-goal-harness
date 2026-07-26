@@ -8,8 +8,8 @@ import {
 	readFileSync,
 	writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { basename, join } from "node:path";
+import { goalaHome } from "./config.ts";
 
 interface SQLiteRunResult {
 	changes: number | bigint;
@@ -123,9 +123,9 @@ const SECRET_PATTERNS: RegExp[] = [
 ];
 
 function paths(): MemoryPaths {
-	const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
-	const harnessHome = process.env.PI_GOAL_HARNESS_HOME || join(agentDir, "pi-goal-harness");
-	const root = process.env.PI_HARNESS_MEMORY_ROOT || join(harnessHome, "memory");
+	const root =
+		process.env.PI_GOALA_MEMORY_ROOT ??
+		join(goalaHome(), "memory");
 	return {
 		root,
 		database: join(root, "coala.sqlite3"),

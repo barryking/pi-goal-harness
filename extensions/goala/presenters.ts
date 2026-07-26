@@ -16,8 +16,8 @@ interface StatusViewEntry {
 	content: string;
 }
 
-export const PLAN_VIEW_ENTRY = "goal-harness-plan";
-export const STATUS_VIEW_ENTRY = "goal-harness-status";
+export const PLAN_VIEW_ENTRY = "goala-plan";
+export const STATUS_VIEW_ENTRY = "goala-status";
 
 export function truncate(text: string, length = 88): string {
 	return text.length <= length ? text : `${text.slice(0, length - 1)}…`;
@@ -31,6 +31,7 @@ export function formatState(state: GoalState): string {
 		`Phase: ${state.phase}`,
 		`Progress: ${done}/${state.plan.length || "unplanned"}`,
 		`Review policy: ${state.reviewPolicy}`,
+		`Authoritative sources: ${state.sources.length}`,
 		`Repair cycles: ${state.repairCycles}`,
 	];
 	const reviewStep = state.plan.find(
@@ -57,8 +58,18 @@ export function formatPlanForReview(
 	state: Pick<
 		GoalState,
 		"objective" | "phase" | "acceptanceCriteria" | "risks" | "plan" | "reviewPolicy"
-	>,
+	> & Partial<Pick<GoalState, "sources">>,
 ): string {
+	const sources = state.sources ?? [];
+	const sourceList =
+		sources.length > 0
+			? sources
+				.map(
+					(source, index) =>
+						`${index + 1}. ${source.path} (sha256 ${source.sha256.slice(0, 12)}, ${source.bytes.toLocaleString()} bytes)`,
+				)
+				.join("\n")
+			: "None.";
 	const criteria = state.acceptanceCriteria
 		.map((criterion, index) => `${index + 1}. ${criterion}`)
 		.join("\n");
@@ -76,6 +87,9 @@ export function formatPlanForReview(
 Goal: ${state.objective}
 Phase: ${state.phase}
 Review policy: ${state.reviewPolicy}
+
+Authoritative sources (${sources.length})
+${sourceList}
 
 Acceptance criteria (${state.acceptanceCriteria.length})
 ${criteria}
@@ -119,20 +133,23 @@ export function displayStatus(pi: ExtensionAPI, content: string): void {
 
 export function updateGoalUi(ctx: ExtensionContext, state: GoalState): void {
 	if (state.phase === "idle") {
-		ctx.ui.setStatus("goal-harness", undefined);
-		ctx.ui.setWidget("goal-harness", undefined);
+		ctx.ui.setStatus("goala", undefined);
+		ctx.ui.setWidget("goala", undefined);
 		return;
 	}
 
 	const done = state.plan.filter((step) => step.status === "done").length;
 	const total = state.plan.length;
-	ctx.ui.setStatus("goal-harness", `goal:${state.phase}${total > 0 ? ` ${done}/${total}` : ""}`);
+	ctx.ui.setStatus("goala", `goal:${state.phase}${total > 0 ? ` ${done}/${total}` : ""}`);
 
 	const lines = [
 		`Goal: ${truncate(state.objective)}`,
 		`Phase: ${state.phase}`,
 		`Review: ${state.reviewPolicy}`,
 	];
+	if (state.sources.length > 0) {
+		lines.push(`Sources: ${state.sources.length}`);
+	}
 	for (const step of state.plan) {
 		lines.push(`${stepSymbol(step.status)} ${step.id}. ${truncate(step.title, 76)}`);
 	}
@@ -140,5 +157,5 @@ export function updateGoalUi(ctx: ExtensionContext, state: GoalState): void {
 		lines.push(`Verification: ${state.verification.verdict.toUpperCase()} — ${truncate(state.verification.summary, 70)}`);
 	}
 	if (state.blockedReason) lines.push(`Attention: ${truncate(state.blockedReason, 72)}`);
-	ctx.ui.setWidget("goal-harness", lines);
+	ctx.ui.setWidget("goala", lines);
 }

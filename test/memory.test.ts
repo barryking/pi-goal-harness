@@ -13,10 +13,10 @@ import {
 	setMemoryStatus,
 	storeVerifiedEpisode,
 	type MemoryConfig,
-} from "../extensions/goal-harness/memory.ts";
+} from "../extensions/goala/memory.ts";
 
-const root = mkdtempSync(join(tmpdir(), "pi-goal-harness-memory-"));
-process.env.PI_GOAL_HARNESS_HOME = root;
+const root = mkdtempSync(join(tmpdir(), "pi-goala-memory-"));
+process.env.PI_GOALA_HOME = root;
 
 const config: MemoryConfig = {
 	enabled: true,

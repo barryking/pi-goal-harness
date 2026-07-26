@@ -2,13 +2,13 @@ import { resolve } from "node:path";
 import {
 	storeVerifiedEpisode,
 	type MemoryConfig,
-} from "../extensions/goal-harness/memory.ts";
+} from "../extensions/goala/memory.ts";
 
 const [repo, memoryRoot] = process.argv.slice(2);
 if (!repo || !memoryRoot) {
 	throw new Error("Usage: node --import tsx eval/seed-window-memory.ts <repo> <memory-root>");
 }
-process.env.PI_HARNESS_MEMORY_ROOT = resolve(memoryRoot);
+process.env.PI_GOALA_MEMORY_ROOT = resolve(memoryRoot);
 
 const config: MemoryConfig = {
 	enabled: true,

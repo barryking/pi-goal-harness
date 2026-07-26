@@ -7,12 +7,12 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
 	findRecoverableGoals,
 	formatRecoveryStatus,
-} from "../extensions/goal-harness/recovery.ts";
+} from "../extensions/goala/recovery.ts";
 import {
 	emptyState,
 	GOAL_STATE_ENTRY,
 	type GoalState,
-} from "../extensions/goal-harness/workflow.ts";
+} from "../extensions/goala/workflow.ts";
 
 function addSession(
 	cwd: string,

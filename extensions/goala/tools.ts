@@ -3,7 +3,7 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { HarnessConfig } from "./config.ts";
+import type { GoalaConfig } from "./config.ts";
 import {
 	changedFiles,
 	formatMemoryPacket,
@@ -18,13 +18,14 @@ import {
 	type Phase,
 	type VerificationResult,
 } from "./workflow.ts";
+import { inspectGoalSources } from "./sources.ts";
 
 const PLAN_TOOLS = ["read", "bash", "grep", "find", "ls", "memory_search", "memory_evidence", "submit_plan"];
 const EXECUTE_TOOLS = ["read", "bash", "edit", "write", "memory_search", "memory_evidence", "goal_progress"];
 const VERIFY_TOOLS = ["read", "bash", "grep", "find", "ls", "submit_verification"];
 const STEP_VERIFY_TOOLS = ["read", "bash", "grep", "find", "ls", "submit_step_verification"];
 
-export const HARNESS_TOOLS = new Set([
+export const GOALA_TOOLS = new Set([
 	"memory_search",
 	"memory_evidence",
 	"submit_plan",
@@ -43,7 +44,7 @@ export type PendingAction =
 
 interface ToolRuntime {
 	getState(): GoalState;
-	getConfig(): HarnessConfig;
+	getConfig(): GoalaConfig;
 	setPendingAction(action: PendingAction | undefined): void;
 	persist(ctx: ExtensionContext): void;
 	applyPhase(ctx: ExtensionContext): Promise<boolean>;
@@ -94,6 +95,21 @@ function now(): string {
 	return new Date().toISOString();
 }
 
+function sourceDriftResult(state: GoalState, cwd: string): {
+	content: Array<{ type: "text"; text: string }>;
+	details: { accepted: false; sourceDrift: ReturnType<typeof inspectGoalSources> };
+} | undefined {
+	const sourceDrift = inspectGoalSources(cwd, state.sources);
+	if (sourceDrift.length === 0) return;
+	return {
+		content: [{
+			type: "text",
+			text: `Submission rejected: the authoritative goal contract changed.\n${sourceDrift.map((source) => `- ${source.path}: ${source.status} — ${source.detail}`).join("\n")}\nRestore the captured source or start a replacement goal to approve the new contract.`,
+		}],
+		details: { accepted: false, sourceDrift },
+	};
+}
+
 export function toolsForPhase(phase: Phase, baselineTools: string[]): string[] {
 	switch (phase) {
 		case "planning":
@@ -112,7 +128,7 @@ export function toolsForPhase(phase: Phase, baselineTools: string[]): string[] {
 	}
 }
 
-export function registerHarnessTools(pi: ExtensionAPI, runtime: ToolRuntime): void {
+export function registerGoalaTools(pi: ExtensionAPI, runtime: ToolRuntime): void {
 	pi.registerTool({
 		name: "memory_search",
 		label: "Search verified memory",
@@ -207,6 +223,8 @@ export function registerHarnessTools(pi: ExtensionAPI, runtime: ToolRuntime): vo
 					details: { accepted: false },
 				};
 			}
+			const sourceDrift = sourceDriftResult(state, ctx.cwd);
+			if (sourceDrift) return sourceDrift;
 			if (
 				params.acceptanceCriteria.some((criterion) => !criterion.trim()) ||
 				params.steps.some(
@@ -276,6 +294,10 @@ export function registerHarnessTools(pi: ExtensionAPI, runtime: ToolRuntime): vo
 					content: [{ type: "text" as const, text: "Progress rejected: the goal is not in execution mode." }],
 					details: { accepted: false },
 				};
+			}
+			if (params.action !== "block") {
+				const sourceDrift = sourceDriftResult(state, ctx.cwd);
+				if (sourceDrift) return sourceDrift;
 			}
 
 			if (params.action === "complete_step") {
@@ -392,6 +414,8 @@ export function registerHarnessTools(pi: ExtensionAPI, runtime: ToolRuntime): vo
 					details: { accepted: false },
 				};
 			}
+			const sourceDrift = sourceDriftResult(state, ctx.cwd);
+			if (sourceDrift) return sourceDrift;
 			const implementedSteps = state.plan.filter((candidate) => candidate.status === "implemented");
 			const step = implementedSteps[0];
 			if (implementedSteps.length !== 1 || !step) {
@@ -483,6 +507,8 @@ export function registerHarnessTools(pi: ExtensionAPI, runtime: ToolRuntime): vo
 					details: { accepted: false },
 				};
 			}
+			const sourceDrift = sourceDriftResult(state, ctx.cwd);
+			if (sourceDrift) return sourceDrift;
 			if (state.plan.some((step) => step.status !== "done")) {
 				return {
 					content: [{

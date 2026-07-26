@@ -3,7 +3,7 @@ import test from "node:test";
 import {
 	enforceToolPolicy,
 	isReadOnlyCommand,
-} from "../extensions/goal-harness/policy.ts";
+} from "../extensions/goala/policy.ts";
 
 const nonInteractiveContext = {
 	hasUI: false,

@@ -3,10 +3,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import goalHarness from "../extensions/goal-harness/index.ts";
+import goala from "../extensions/goala/index.ts";
 
-process.env.PI_GOAL_HARNESS_HOME = mkdtempSync(
-	join(tmpdir(), "pi-goal-harness-coexistence-"),
+process.env.PI_GOALA_HOME = mkdtempSync(
+	join(tmpdir(), "pi-goala-coexistence-"),
 );
 
 test("idle installation preserves the host model, tools, and command policy", async () => {
@@ -51,8 +51,8 @@ test("idle installation preserves the host model, tools, and command policy", as
 		sendMessage() {},
 	};
 
-	goalHarness(pi as never);
-	assert.ok(commands.has("harness-setup"));
+	goala(pi as never);
+	assert.ok(commands.has("goala-setup"));
 
 	const model = { provider: "example", id: "chosen-model" };
 	const ctx = {

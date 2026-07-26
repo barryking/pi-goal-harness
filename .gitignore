@@ -6,4 +6,5 @@ eval/results/
 !eval/results/
 eval/results/*
 !eval/results/2026-07-25-verifier-grounded-memory.json
+!eval/results/2026-07-26-authoritative-source.json
 eval/tmp/

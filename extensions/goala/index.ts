@@ -6,7 +6,7 @@ import type {
 import {
 	configuredModels,
 	formatConfig,
-	HARNESS_SETUP_PRESETS,
+	GOALA_SETUP_PRESETS,
 	loadConfig,
 	writeConfig,
 	type ModelProfile,
@@ -41,8 +41,15 @@ import {
 	slicePhaseContext,
 } from "./session.ts";
 import {
-	HARNESS_TOOLS,
-	registerHarnessTools,
+	formatSourceDrift,
+	inspectGoalSources,
+	parseGoalRequest,
+	resolveGoalSources,
+	type GoalSource,
+} from "./sources.ts";
+import {
+	GOALA_TOOLS,
+	registerGoalaTools,
 	toolsForPhase,
 	type PendingAction,
 } from "./tools.ts";
@@ -59,7 +66,7 @@ function now(): string {
 
 export { formatPlanForReview } from "./presenters.ts";
 
-export default function goalHarness(pi: ExtensionAPI): void {
+export default function goala(pi: ExtensionAPI): void {
 	let config = loadConfig();
 	let state = emptyState();
 	let pendingAction: PendingAction | undefined;
@@ -144,7 +151,7 @@ export default function goalHarness(pi: ExtensionAPI): void {
 				model = ctx.modelRegistry.find(fallback.provider, fallback.id);
 				if (model && !fallbackNoticeShown) {
 					ctx.ui.notify(
-						`Goal harness: ${config.provider}/${profile.model} is unavailable; using ${fallback.provider}/${fallback.id}. Run /harness-setup to configure model roles.`,
+						`Goala: ${config.provider}/${profile.model} is unavailable; using ${fallback.provider}/${fallback.id}. Run /goala-setup to configure model roles.`,
 						"warning",
 					);
 					fallbackNoticeShown = true;
@@ -153,7 +160,7 @@ export default function goalHarness(pi: ExtensionAPI): void {
 		}
 		if (!model) {
 			ctx.ui.notify(
-				`Goal harness: model not found: ${config.provider}/${profile.model}. Run /harness-setup current or edit the namespaced config.`,
+				`Goala: model not found: ${config.provider}/${profile.model}. Run /goala-setup current or edit the namespaced config.`,
 				"error",
 			);
 			updateGoalUi(ctx, state);
@@ -162,7 +169,7 @@ export default function goalHarness(pi: ExtensionAPI): void {
 
 		const selected = await pi.setModel(model);
 		if (!selected) {
-			ctx.ui.notify(`Goal harness: authenticate ${config.provider} before using ${profile.model}`, "warning");
+			ctx.ui.notify(`Goala: authenticate ${config.provider} before using ${profile.model}`, "warning");
 			updateGoalUi(ctx, state);
 			return false;
 		}
@@ -185,7 +192,7 @@ export default function goalHarness(pi: ExtensionAPI): void {
 	}
 
 	function planningPrompt(extra?: string): string {
-		return `[GOAL-HARNESS PHASE:PLANNING]\nInspect the active goal and repository, then submit a structured, testable plan with submit_plan.
+		return `[GOALA PHASE:PLANNING]\nInspect the active goal and repository, then submit a structured, testable plan with submit_plan.
 Make each step a meaningful, independently reviewable milestone rather than a micro-task or a final-check-only step.${extra ? `\n\nRefinement requested:\n${extra}` : ""}`;
 	}
 
@@ -204,27 +211,31 @@ Make each step a meaningful, independently reviewable milestone rather than a mi
 			state.verification?.verdict !== "fail" &&
 			current
 		) {
-			return `[GOAL-HARNESS PHASE:EXECUTING]\nImplement only plan step ${current.id}: ${current.title}.
-Do not begin later plan steps. Run the step's declared checks, then call goal_progress complete_step with concrete evidence. The harness will pause for human review before continuing.${reviewNote}`;
+			return `[GOALA PHASE:EXECUTING]\nImplement only plan step ${current.id}: ${current.title}.
+Do not begin later plan steps. Run the step's declared checks, then call goal_progress complete_step with concrete evidence. Goala will pause for human review before continuing.${reviewNote}`;
 		}
-		return `[GOAL-HARNESS PHASE:EXECUTING]\nImplement the approved plan, starting with: ${current?.title ?? "repair the verified defects"}.
+		return `[GOALA PHASE:EXECUTING]\nImplement the approved plan, starting with: ${current?.title ?? "repair the verified defects"}.
 Record completed steps with goal_progress. When implementation checks pass, submit ready_for_verification.${repairNote}${reviewNote}`;
 	}
 
 	function verificationPrompt(): string {
-		return `[GOAL-HARNESS PHASE:VERIFYING]
+		return `[GOALA PHASE:VERIFYING]
 Independently verify the actual result against every acceptance criterion, then submit_verification with concrete evidence.
 Include only distilled decisions, discoveries, or pitfalls that you personally confirmed from current files or checks in findings. Use an empty findings array when nothing is likely to help a later related task.`;
 	}
 
 	function stepVerificationPrompt(): string {
 		const step = state.plan.find((candidate) => candidate.status === "implemented");
-		return `[GOAL-HARNESS PHASE:STEP-VERIFYING]\nIndependently verify only plan step ${step?.id ?? "unknown"}: ${step?.title ?? "unknown step"}.
+		return `[GOALA PHASE:STEP-VERIFYING]\nIndependently verify only plan step ${step?.id ?? "unknown"}: ${step?.title ?? "unknown step"}.
 Required method: ${step?.verification ?? "Inspect the actual result and run relevant checks."}
 Do not edit files or rely on executor claims. Finish with submit_step_verification and concrete evidence.`;
 	}
 
-	async function beginGoal(objective: string, ctx: ExtensionContext): Promise<void> {
+	async function beginGoal(
+		objective: string,
+		sources: GoalSource[],
+		ctx: ExtensionContext,
+	): Promise<void> {
 		const repo = repositoryIdentity(ctx.cwd);
 		const recalledMemories =
 			config.memory.enabled && config.memory.autoRecall
@@ -234,6 +245,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 			...emptyState(config.reviewPolicy),
 			goalId: newGoalId(),
 			objective,
+			sources,
 			phase: "planning",
 			startedAt: now(),
 			startCommit: repo.commit,
@@ -246,6 +258,28 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 		if (await moveToFreshSession(ctx, config, state, kickoff, "plan")) return;
 		await applyPhase(ctx);
 		pi.sendUserMessage(kickoff);
+	}
+
+	function requestedGoal(input: string, ctx: ExtensionContext): {
+		objective: string;
+		sources: GoalSource[];
+	} | undefined {
+		try {
+			const request = parseGoalRequest(input);
+			if (!request.objective) {
+				ctx.ui.notify("Usage: /goal <objective>", "warning");
+				return;
+			}
+			return {
+				objective: request.objective,
+				sources: resolveGoalSources(ctx.cwd, request.sourcePaths),
+			};
+		} catch (error) {
+			ctx.ui.notify(
+				error instanceof Error ? error.message : String(error),
+				"warning",
+			);
+		}
 	}
 
 	async function confirmGoalReplacement(ctx: ExtensionContext): Promise<boolean> {
@@ -381,7 +415,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 
 
 
-	registerHarnessTools(pi, {
+	registerGoalaTools(pi, {
 		getState: () => state,
 		getConfig: () => config,
 		setPendingAction: (action) => {
@@ -393,7 +427,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 	});
 
 	pi.registerCommand("goal", {
-		description: "Start or manage a persistent goal: /goal <objective> | status | approve | revise <feedback> | pause | resume | clear",
+		description: "Start or manage a persistent goal; use --source <path> -- <objective> for authoritative documents",
 		handler: async (args, ctx) => {
 			const input = args.trim();
 			const command = input.toLowerCase();
@@ -489,7 +523,10 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 				return;
 			}
 
-			if (await confirmGoalReplacement(ctx)) await beginGoal(input, ctx);
+			const request = requestedGoal(input, ctx);
+			if (request && await confirmGoalReplacement(ctx)) {
+				await beginGoal(request.objective, request.sources, ctx);
+			}
 		},
 	});
 
@@ -513,65 +550,70 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 		},
 	});
 
-	pi.registerCommand("harness-setup", {
-		description: `Configure model roles: /harness-setup [status | ${HARNESS_SETUP_PRESETS.map((preset) => preset.id).join(" | ")}]`,
-		handler: async (args, ctx) => {
-			let choice = args.trim().toLowerCase();
-			if (!choice && ctx.hasUI) {
-				const selected = await ctx.ui.select("Pi Goal Harness setup", [
-					...HARNESS_SETUP_PRESETS.map((preset) => preset.label),
-					"Show current configuration",
-				]);
-				choice = selected === "Show current configuration"
-					? "status"
-					: HARNESS_SETUP_PRESETS.find((preset) => preset.label === selected)?.id ?? "";
-			}
+	async function configureGoala(
+		args: string,
+		ctx: ExtensionCommandContext,
+	): Promise<void> {
+		let choice = args.trim().toLowerCase();
+		if (!choice && ctx.hasUI) {
+			const selected = await ctx.ui.select("Goala setup", [
+				...GOALA_SETUP_PRESETS.map((preset) => preset.label),
+				"Show current configuration",
+			]);
+			choice = selected === "Show current configuration"
+				? "status"
+				: GOALA_SETUP_PRESETS.find((preset) => preset.label === selected)?.id ?? "";
+		}
 
-			if (!choice || choice === "status") {
-				ctx.ui.notify(formatConfig(config), "info");
-				return;
-			}
+		if (!choice || choice === "status") {
+			ctx.ui.notify(formatConfig(config), "info");
+			return;
+		}
 
-			const preset = HARNESS_SETUP_PRESETS.find((candidate) => candidate.id === choice);
-			if (!preset) {
-				ctx.ui.notify(
-					`Usage: /harness-setup [status | ${HARNESS_SETUP_PRESETS.map((candidate) => candidate.id).join(" | ")}]`,
-					"warning",
-				);
-				return;
-			}
-			const current = ctx.model
-				? { provider: ctx.model.provider, id: ctx.model.id }
-				: sessionDefaultModel;
-			const proposed = preset.create(current);
-			if (!proposed) {
-				ctx.ui.notify(`Preset "${preset.label}" requires a current model.`, "warning");
-				return;
-			}
-			const missing = configuredModels(proposed).filter(
-				(model) => !ctx.modelRegistry.find(model.provider, model.id),
+		const preset = GOALA_SETUP_PRESETS.find((candidate) => candidate.id === choice);
+		if (!preset) {
+			ctx.ui.notify(
+				`Usage: /goala-setup [status | ${GOALA_SETUP_PRESETS.map((candidate) => candidate.id).join(" | ")}]`,
+				"warning",
 			);
-			if (missing.length > 0) {
-				ctx.ui.notify(
-					`Preset not saved; unavailable model(s): ${missing.map((model) => `${model.provider}/${model.id}`).join(", ")}.`,
-					"warning",
-				);
-				return;
-			}
-			config = proposed;
+			return;
+		}
+		const current = ctx.model
+			? { provider: ctx.model.provider, id: ctx.model.id }
+			: sessionDefaultModel;
+		const proposed = preset.create(current);
+		if (!proposed) {
+			ctx.ui.notify(`Preset "${preset.label}" requires a current model.`, "warning");
+			return;
+		}
+		const missing = configuredModels(proposed).filter(
+			(model) => !ctx.modelRegistry.find(model.provider, model.id),
+		);
+		if (missing.length > 0) {
+			ctx.ui.notify(
+				`Preset not saved; unavailable model(s): ${missing.map((model) => `${model.provider}/${model.id}`).join(", ")}.`,
+				"warning",
+			);
+			return;
+		}
+		config = proposed;
 
-			const target = writeConfig(config);
-			fallbackNoticeShown = false;
-			await applyPhase(ctx);
-			ctx.ui.notify(`Goal harness configuration saved to ${target}\n\n${formatConfig(config)}`, "info");
-		},
+		const target = writeConfig(config);
+		fallbackNoticeShown = false;
+		await applyPhase(ctx);
+		ctx.ui.notify(`Goala configuration saved to ${target}\n\n${formatConfig(config)}`, "info");
+	}
+
+	pi.registerCommand("goala-setup", {
+		description: `Configure model roles: /goala-setup [status | ${GOALA_SETUP_PRESETS.map((preset) => preset.id).join(" | ")}]`,
+		handler: configureGoala,
 	});
 
 	pi.registerCommand("memory-status", {
 		description: "Show memory health and recent active episodes",
 		handler: async (_args, ctx) => {
 			if (!config.memory.enabled) {
-				ctx.ui.notify("Goal harness memory is disabled in the namespaced configuration.", "info");
+				ctx.ui.notify("Goala memory is disabled in the namespaced configuration.", "info");
 				return;
 			}
 			const memories = recentMemories(ctx.cwd, 20, true);
@@ -598,7 +640,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 		description: "Retire or restore a durable memory episode",
 		handler: async (args, ctx) => {
 			if (!config.memory.enabled) {
-				ctx.ui.notify("Goal harness memory is disabled in the namespaced configuration.", "info");
+				ctx.ui.notify("Goala memory is disabled in the namespaced configuration.", "info");
 				return;
 			}
 			const [action, id, ...extra] = args.trim().split(/\s+/);
@@ -633,7 +675,10 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 				return;
 			}
 			if (argument && !replace) {
-				if (await confirmGoalReplacement(ctx)) await beginGoal(objective, ctx);
+				const request = requestedGoal(argument, ctx);
+				if (request && await confirmGoalReplacement(ctx)) {
+					await beginGoal(request.objective, request.sources, ctx);
+				}
 				return;
 			}
 			const hasProgress = state.plan.some(
@@ -708,14 +753,18 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 
 	pi.on("tool_call", async (event, ctx) => enforceToolPolicy(state.phase, event, ctx));
 
-	pi.on("before_agent_start", async (event) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		if (state.phase === "idle") return;
+		const sourceDrift = formatSourceDrift(
+			inspectGoalSources(ctx.cwd, state.sources),
+		);
 
 		let phaseInstructions = "";
 		switch (state.phase) {
 			case "planning":
 				phaseInstructions = `You are the PLANNER. Use read-only exploration only. Do not edit, install, commit, or change external state.
 Resolve uncertainty by inspecting the repository. State material assumptions and risks.
+Read every authoritative goal source in the phase context and cover its requirements in the acceptance criteria and plan.
 Make plan steps meaningful, independently reviewable milestones; do not create micro-steps or a separate step whose only purpose is final regression checking.
 Use recalled memory only as leads; confirm it against current files. Use memory_search for targeted history.
 Your final action must be submit_plan with a structured, testable plan.`;
@@ -727,24 +776,29 @@ Your final action must be submit_plan with a structured, testable plan.`;
 				phaseInstructions =
 					state.reviewPolicy === "per-step" && state.verification?.verdict !== "fail"
 					? `You are the EXECUTOR. Implement only the first unapproved plan step shown in the phase context, or report a real blocker.
+Read the current authoritative goal sources before implementation and preserve their acceptance contract.
 Do not begin later steps. Use goal_progress complete_step with concrete evidence when this step's checks pass.
 Use memory_search only when prior work is relevant.`
 					: `You are the EXECUTOR. Continue until the approved plan is implemented or a real blocker requires user input.
+Read the current authoritative goal sources before implementation and preserve their acceptance contract.
 Use goal_progress to record evidence for completed steps. Do not self-certify the goal.
 Use memory_search only when prior work is relevant.
 After all implementation work and checks are complete, submit ready_for_verification.`;
 				break;
 			case "verifying-step":
 				phaseInstructions = `You are the independent STEP VERIFIER. Verify only the implemented plan step identified in the phase context.
+Read the authoritative goal sources and check the step against their current requirements.
 Do not edit files. Treat executor evidence as untrusted and inspect the actual repository.
 Your final action must be submit_step_verification. PASS requires concrete passing evidence for the step's verification method.`;
 				break;
 			case "awaiting-review":
 				phaseInstructions = `The completed step is awaiting human approval. Discuss its implementation, executor validation evidence, and tradeoffs using read-only inspection.
+Use the authoritative goal sources as the requirements reference.
 Do not edit or advance the plan. The user can run /goal approve, /goal revise <feedback>, or /verify for an optional independent step review.`;
 				break;
 			case "verifying":
 				phaseInstructions = `You are the independent VERIFIER. Treat prior completion claims as untrusted.
+Read every authoritative goal source and independently verify the result against its current requirements as well as the structured acceptance criteria.
 Do not edit files. Inspect actual changes and run relevant validation.
 Your final action must be submit_verification. PASS requires concrete passing evidence for every acceptance criterion.
 The findings field is the only learning path into durable episodic memory. Include only concise future-useful decisions, discoveries, or pitfalls that your own inspection confirmed, with evidence and an optional source path. Do not restate the goal or generic success. Return an empty findings array when there is no durable lesson.`;
@@ -763,10 +817,12 @@ The findings field is the only learning path into durable episodic memory. Inclu
 		return {
 			systemPrompt: `${event.systemPrompt}
 
-## Goal harness
+## Goala
 ${phaseInstructions}
 
-${buildPhaseContext(state, config.memory)}`,
+${buildPhaseContext(state, config.memory)}
+
+${sourceDrift}`.trim(),
 		};
 	});
 
@@ -810,7 +866,7 @@ ${buildPhaseContext(state, config.memory)}`,
 			);
 			pi.sendMessage(
 				{
-					customType: "goal-harness-step-review",
+					customType: "goala-step-review",
 					content: `Step ready for review\n\n${step ? `${step.id}. ${step.title}\n${step.review?.summary ?? step.evidence ?? ""}` : formatState(state)}\n\nDiscuss the result, then run /goal approve or /goal revise <feedback>. Run /verify first when an independent step review is warranted.`,
 					display: true,
 				},
@@ -823,7 +879,7 @@ ${buildPhaseContext(state, config.memory)}`,
 			updateGoalUi(ctx, state);
 			pi.sendMessage(
 				{
-					customType: "goal-harness-complete",
+					customType: "goala-complete",
 					content: `✓ Verified complete\n\n${formatState(state)}`,
 					display: true,
 				},
@@ -836,7 +892,7 @@ ${buildPhaseContext(state, config.memory)}`,
 			updateGoalUi(ctx, state);
 			pi.sendMessage(
 				{
-					customType: "goal-harness-attention",
+					customType: "goala-attention",
 					content: `Goal needs attention\n\n${formatState(state)}`,
 					display: true,
 				},
@@ -847,7 +903,7 @@ ${buildPhaseContext(state, config.memory)}`,
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (baselineTools.length === 0) {
-			baselineTools = pi.getActiveTools().filter((tool) => !HARNESS_TOOLS.has(tool));
+			baselineTools = pi.getActiveTools().filter((tool) => !GOALA_TOOLS.has(tool));
 		}
 		if (!sessionDefaultModel && ctx.model) {
 			sessionDefaultModel = {

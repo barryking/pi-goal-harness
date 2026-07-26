@@ -99,7 +99,7 @@ class PiRpc {
 		const response = await this.send("get_entries");
 		const entries = response.data?.entries ?? response.data ?? [];
 		const states = entries.filter(
-			(entry) => entry.type === "custom" && entry.customType === "goal-harness-state",
+			(entry) => entry.type === "custom" && entry.customType === "goala-state",
 		);
 		return states.at(-1)?.data;
 	}
@@ -171,16 +171,19 @@ const sessionDir = resolve(args["session-dir"] ?? `${output}.sessions`);
 mkdirSync(sessionDir, { recursive: true });
 
 const rpc = new PiRpc(cwd, sessionDir, {
-	PI_HARNESS_MEMORY_ENABLED: args.memory === "off" ? "0" : "1",
-	PI_HARNESS_FRESH_SESSIONS: args["fresh-sessions"] === "off" ? "0" : "1",
-	PI_HARNESS_REVIEW_POLICY: args["review-policy"] ?? "final",
-	PI_HARNESS_MEMORY_ROOT: resolve(args["memory-root"] ?? `${output}.memory`),
+	PI_GOALA_MEMORY_ENABLED: args.memory === "off" ? "0" : "1",
+	PI_GOALA_FRESH_SESSIONS: args["fresh-sessions"] === "off" ? "0" : "1",
+	PI_GOALA_REVIEW_POLICY: args["review-policy"] ?? "final",
+	PI_GOALA_MEMORY_ROOT: resolve(args["memory-root"] ?? `${output}.memory`),
 }, args.extension);
 
 const startedAt = new Date().toISOString();
 let result;
 try {
-	await rpc.send("prompt", { message: `/goal ${args.objective}` }, 12 * 60_000);
+	const goalCommand = args.source
+		? `/goal --source ${JSON.stringify(args.source)} -- ${args.objective}`
+		: `/goal ${args.objective}`;
+	await rpc.send("prompt", { message: goalCommand }, 12 * 60_000);
 	const planned = await rpc.waitForPhase(["awaiting-execution", "needs-attention"], 12 * 60_000);
 	if (planned.phase !== "awaiting-execution") {
 		throw new Error(`Planning stopped in ${planned.phase}: ${planned.blockedReason ?? "unknown"}`);
@@ -223,6 +226,7 @@ try {
 		finishedAt: new Date().toISOString(),
 		cwd,
 		objective: args.objective,
+		source: args.source ?? null,
 		memory: args.memory === "off" ? "off" : "on",
 		freshSessions: args["fresh-sessions"] === "off" ? "off" : "on",
 		reviewPolicy,
