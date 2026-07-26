@@ -60,11 +60,11 @@ test("setup supports keep, effort-only, tiered model selection, review, and edit
 		["Step verifier model", "model-b"],
 		["Step verifier reasoning effort", "Extra high"],
 		["Final verifier", "Keep current"],
-		["Repair fallback", "Change provider or model"],
-		["Repair fallback provider", "provider-b"],
-		["Repair fallback model", "plain"],
-		["Review Goala configuration", "Edit a phase"],
-		["Choose a phase to edit", "Planner"],
+		["Fallback executor", "Change provider or model"],
+		["Fallback executor provider", "provider-b"],
+		["Fallback executor model", "plain"],
+		["Review Goala configuration", "Edit a role"],
+		["Choose a role to edit", "Planner"],
 		["Planner", "Change reasoning effort"],
 		["Planner reasoning effort", "Low"],
 		["Review Goala configuration", "Save configuration"],
@@ -122,7 +122,7 @@ test("setup skips provider selection when only one provider is available", async
 		["Executor", "Keep current"],
 		["Step verifier", "Keep current"],
 		["Final verifier", "Keep current"],
-		["Repair fallback", "Keep current"],
+		["Fallback executor", "Keep current"],
 		["Review Goala configuration", "Save configuration"],
 	];
 	const harness = setupContext(models, selections);
@@ -157,7 +157,7 @@ test("setup cancellation returns no partial configuration", async () => {
 		["Executor", "Keep current"],
 		["Step verifier", "Keep current"],
 		["Final verifier", "Keep current"],
-		["Repair fallback", "Keep current"],
+		["Fallback executor", "Keep current"],
 		["Review Goala configuration", "Cancel"],
 	];
 	const harness = setupContext(models, selections);

@@ -3,7 +3,8 @@
 Goala is one Pi extension with three responsibilities:
 
 1. persist a goal and its acceptance contract;
-2. route work through plan, execute, verify, and repair phases;
+2. route work through planning, execution, independent verification, and a
+   bounded repair loop;
 3. retrieve and promote bounded verified memory.
 
 ## Module boundaries
@@ -13,7 +14,7 @@ own one concern:
 
 | Module | Responsibility |
 |---|---|
-| `index.ts` | Commands, phase transitions, model routing, and event orchestration |
+| `index.ts` | Commands, phase transitions, and event orchestration |
 | `tools.ts` | Tool schemas and state transitions caused by tool submissions |
 | `session.ts` | Fresh-session handoff and logical phase context slicing |
 | `sources.ts` | Safe project-local source resolution, hashing, and drift detection |
@@ -23,6 +24,7 @@ own one concern:
 | `workflow.ts` | Goal-state types, normalization, and invariants |
 | `memory.ts` | Verified episodic storage and retrieval |
 | `recovery.ts` | Discovery of unfinished goals in saved Pi sessions |
+| `routing.ts` | Model-role selection and fallback-executor activation |
 | `setup.ts` | Interactive available-model selection for each lifecycle role |
 | `config.ts` | Namespaced configuration and model-role presets |
 

@@ -10,7 +10,6 @@ import {
 	loadConfig,
 	writeConfig,
 	type GoalaConfig,
-	type ModelProfile,
 	type ReviewPolicy,
 	type ThinkingLevel,
 } from "./config.ts";
@@ -37,6 +36,7 @@ import {
 	findRecoverableGoals,
 	formatRecoveryStatus,
 } from "./recovery.ts";
+import { modelProfileForPhase } from "./routing.ts";
 import {
 	moveToFreshSession,
 	slicePhaseContext,
@@ -102,23 +102,6 @@ export default function goala(pi: ExtensionAPI): void {
 		displayPlan(pi, state);
 	}
 
-	function profileForPhase(): ModelProfile {
-		if (
-			state.phase === "planning" ||
-			state.phase === "awaiting-execution" ||
-			state.phase === "awaiting-review"
-		) return config.planner;
-		if (state.phase === "verifying-step") return config.stepVerifier;
-		if (state.phase === "verifying") return config.verifier;
-		if (
-			state.phase === "executing" &&
-			state.repairCycles >= config.fallbackExecutor.afterRepairCycle
-		) {
-			return config.fallbackExecutor;
-		}
-		return config.executor;
-	}
-
 	async function statusForSession(
 		ctx: ExtensionCommandContext,
 	): Promise<string> {
@@ -143,7 +126,11 @@ export default function goala(pi: ExtensionAPI): void {
 			return true;
 		}
 
-		const profile = profileForPhase();
+		const profile = modelProfileForPhase(
+			config,
+			state.phase,
+			state.repairCycles,
+		);
 		let model = ctx.modelRegistry.find(profile.provider, profile.model);
 		if (!model && config.allowCurrentModelFallback) {
 			const fallback = sessionDefaultModel ?? (ctx.model
@@ -563,12 +550,12 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 		if (!choice && ctx.hasUI) {
 			const selected = await ctx.ui.select("Goala setup", [
 				...GOALA_SETUP_PRESETS.map((preset) => preset.label),
-				"Configure each phase",
+				"Configure each role",
 				"Show current configuration",
 			]);
 			choice = selected === "Show current configuration"
 				? "status"
-				: selected === "Configure each phase"
+				: selected === "Configure each role"
 					? "custom"
 				: GOALA_SETUP_PRESETS.find((preset) => preset.label === selected)?.id ?? "";
 		}

@@ -218,7 +218,7 @@ export const GOALA_SETUP_PRESETS: readonly GoalaSetupPreset[] = [
 	},
 	{
 		id: "current",
-		label: "Use the current model for every phase",
+		label: "Use the current model for every role",
 		create: (currentModel) =>
 			currentModel
 				? currentModelConfig(currentModel.provider, currentModel.id)
@@ -250,13 +250,14 @@ export function formatConfig(config: GoalaConfig): string {
 		`Executor: ${formatProfile(config.executor)}`,
 		`Step verifier: ${formatProfile(config.stepVerifier)}`,
 		`Verifier: ${formatProfile(config.verifier)}`,
-		`Fallback: ${formatProfile(config.fallbackExecutor)} from repair ${config.fallbackExecutor.afterRepairCycle}`,
+		`Fallback executor: ${formatProfile(config.fallbackExecutor)}`,
+		`Fallback executor activates after: ${config.fallbackExecutor.afterRepairCycle} failed verification attempts`,
 		`Review policy: ${config.reviewPolicy}`,
 		`Memory: ${config.memory.enabled ? "enabled" : "disabled"}; auto-recall ${config.memory.autoRecall ? "on" : "off"}`,
-		`Current-model fallback: ${config.allowCurrentModelFallback ? "allowed" : "disabled"}`,
+		`Unavailable-model fallback to current Pi model: ${config.allowCurrentModelFallback ? "allowed" : "disabled"}`,
 	].join("\n");
 }
 
 function formatProfile(profile: ModelProfile): string {
-	return `${profile.provider}/${profile.model}:${profile.thinkingLevel}`;
+	return `${profile.provider}/${profile.model} · ${profile.thinkingLevel} reasoning`;
 }
