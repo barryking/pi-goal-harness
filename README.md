@@ -30,26 +30,27 @@ Goala turns an outcome into a persistent, testable workflow:
 
 Pi 0.82 or newer and Node.js 22.19 or newer are recommended.
 
-From the latest GitHub `main`:
-
-```text
-pi install git:github.com/barryking/pi-goala
-```
-
-Release tags are recommended for reproducible team installations. Version
-`0.2.0` groups the checkpoint, recovery, and verifier-grounded memory features;
-its tag should be used once the release is published.
-
-From a local checkout:
-
-```text
-pi install /absolute/path/to/pi-goala
-```
-
-After a future npm release:
+Install the latest release from npm:
 
 ```text
 pi install npm:pi-goala
+```
+
+Pin a release for reproducible team installations:
+
+```text
+pi install npm:pi-goala@0.2.0
+```
+
+Pi's package command both downloads Goala and registers its extension. A plain
+`npm install -g pi-goala` does not register the package with Pi and is not a
+supported installation path.
+
+From GitHub or a local checkout:
+
+```text
+pi install git:github.com/barryking/pi-goala@v0.2.0
+pi install /absolute/path/to/pi-goala
 ```
 
 Pi packages execute with the permissions of the user running Pi. Review the

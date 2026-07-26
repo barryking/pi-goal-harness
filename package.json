@@ -56,7 +56,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "pack:check": "npm pack --dry-run",
-    "check": "npm run typecheck && npm test && npm run pack:check"
+    "check": "npm run typecheck && npm test && npm run pack:check",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "publishConfig": {
     "access": "public"
