@@ -51,9 +51,12 @@ and restore the backup to `~/.pi/agent/`.
 
 `openai` selects the tested Sol/Luna/Terra model split when those models are
 available. `current` assigns the model active at Pi startup to every role.
-`custom` interactively selects a provider/model and reasoning level for each
-role from Pi's authenticated, available model registry. Cancelling any prompt
-leaves the existing configuration unchanged.
+`custom` reviews each role and defaults to keeping its current configuration.
+For a change, it can adjust reasoning alone or select a provider followed by
+one of that provider's authenticated, available models. Provider selection is
+skipped when only one provider is available. The final summary can be edited,
+saved, or cancelled. Cancelling any prompt leaves the existing configuration
+unchanged.
 
 ## Full schema
 

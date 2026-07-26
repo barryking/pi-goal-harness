@@ -1,6 +1,6 @@
 {
   "name": "pi-goala",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Goal-oriented agent lifecycle, evidence, and verified memory for Pi.",
   "type": "module",
   "author": "Barry King",

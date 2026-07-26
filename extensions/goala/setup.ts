@@ -12,6 +12,10 @@ type ModelRole =
 	| "verifier"
 	| "fallbackExecutor";
 
+type AvailableModel = ReturnType<
+	ExtensionCommandContext["modelRegistry"]["getAvailable"]
+>[number];
+
 const MODEL_ROLES: ReadonlyArray<{ key: ModelRole; label: string }> = [
 	{ key: "planner", label: "Planner" },
 	{ key: "executor", label: "Executor" },
@@ -30,8 +34,226 @@ const THINKING_LEVELS: readonly ThinkingLevel[] = [
 	"max",
 ];
 
-function profileLabel(profile: ModelProfile): string {
-	return `${profile.provider}/${profile.model}:${profile.thinkingLevel}`;
+const KEEP_CURRENT = "Keep current";
+const CHANGE_REASONING = "Change reasoning effort";
+const CHANGE_MODEL = "Change provider or model";
+const SAVE_CONFIGURATION = "Save configuration";
+const EDIT_PHASE = "Edit a phase";
+const CANCEL = "Cancel";
+
+function titleCase(value: string): string {
+	return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function thinkingLabel(level: ThinkingLevel): string {
+	if (level === "off") return "Off";
+	if (level === "xhigh") return "Extra high";
+	if (level === "max") return "Maximum";
+	return titleCase(level);
+}
+
+function providerLabel(
+	ctx: ExtensionCommandContext,
+	provider: string,
+): string {
+	const displayName = ctx.modelRegistry.getProviderDisplayName(provider);
+	return displayName === provider ? provider : `${displayName} (${provider})`;
+}
+
+function modelLabel(model: AvailableModel): string {
+	return model.name && model.name !== model.id
+		? `${model.name} (${model.id})`
+		: model.id;
+}
+
+function profileLabel(
+	ctx: ExtensionCommandContext,
+	available: AvailableModel[],
+	profile: ModelProfile,
+): string {
+	const model = available.find(
+		(candidate) =>
+			candidate.provider === profile.provider && candidate.id === profile.model,
+	);
+	const reasoning =
+		profile.thinkingLevel === "off"
+			? "Reasoning off"
+			: `${thinkingLabel(profile.thinkingLevel)} reasoning`;
+	return [
+		providerLabel(ctx, profile.provider),
+		model ? modelLabel(model) : `${profile.model} (unavailable)`,
+		reasoning,
+	].join(" / ");
+}
+
+function setProfile(
+	config: GoalaConfig,
+	role: ModelRole,
+	profile: ModelProfile,
+): void {
+	if (role === "fallbackExecutor") {
+		config.fallbackExecutor = {
+			...profile,
+			afterRepairCycle: config.fallbackExecutor.afterRepairCycle,
+		};
+		return;
+	}
+	config[role] = profile;
+}
+
+async function selectThinkingLevel(
+	ctx: ExtensionCommandContext,
+	roleLabel: string,
+	profile: ModelProfile,
+): Promise<ThinkingLevel | undefined> {
+	const ordered = [
+		profile.thinkingLevel,
+		...THINKING_LEVELS.filter((level) => level !== profile.thinkingLevel),
+	];
+	const choices = ordered.map((level, index) =>
+		index === 0 ? `${thinkingLabel(level)} (current)` : thinkingLabel(level),
+	);
+	const selected = await ctx.ui.select(
+		`${roleLabel} reasoning effort\nCurrent: ${thinkingLabel(profile.thinkingLevel)}`,
+		choices,
+	);
+	if (!selected) return undefined;
+	return ordered[choices.indexOf(selected)];
+}
+
+async function selectProvider(
+	ctx: ExtensionCommandContext,
+	available: AvailableModel[],
+	roleLabel: string,
+	currentProvider: string,
+): Promise<string | undefined> {
+	const providers = [...new Set(available.map((model) => model.provider))].sort(
+		(left, right) => {
+			if (left === currentProvider) return -1;
+			if (right === currentProvider) return 1;
+			return providerLabel(ctx, left).localeCompare(providerLabel(ctx, right));
+		},
+	);
+	if (providers.length === 1) return providers[0];
+
+	const choices = providers.map((provider, index) =>
+		index === 0 && provider === currentProvider
+			? `${providerLabel(ctx, provider)} (current)`
+			: providerLabel(ctx, provider),
+	);
+	const selected = await ctx.ui.select(
+		`${roleLabel} provider\nCurrent: ${providerLabel(ctx, currentProvider)}`,
+		choices,
+	);
+	if (!selected) return undefined;
+	return providers[choices.indexOf(selected)];
+}
+
+async function selectModel(
+	ctx: ExtensionCommandContext,
+	available: AvailableModel[],
+	roleLabel: string,
+	provider: string,
+	current: ModelProfile,
+): Promise<AvailableModel | undefined> {
+	const models = available
+		.filter((model) => model.provider === provider)
+		.sort((left, right) => {
+			const leftCurrent =
+				left.provider === current.provider && left.id === current.model;
+			const rightCurrent =
+				right.provider === current.provider && right.id === current.model;
+			if (leftCurrent !== rightCurrent) return leftCurrent ? -1 : 1;
+			return modelLabel(left).localeCompare(modelLabel(right));
+		});
+	const choices = models.map((model, index) =>
+		index === 0 &&
+		model.provider === current.provider &&
+		model.id === current.model
+			? `${modelLabel(model)} (current)`
+			: modelLabel(model),
+	);
+	const selected = await ctx.ui.select(
+		`${roleLabel} model\nProvider: ${providerLabel(ctx, provider)}`,
+		choices,
+	);
+	if (!selected) return undefined;
+	return models[choices.indexOf(selected)];
+}
+
+async function changeModel(
+	ctx: ExtensionCommandContext,
+	available: AvailableModel[],
+	roleLabel: string,
+	current: ModelProfile,
+): Promise<ModelProfile | undefined> {
+	const provider = await selectProvider(
+		ctx,
+		available,
+		roleLabel,
+		current.provider,
+	);
+	if (!provider) return undefined;
+	const model = await selectModel(ctx, available, roleLabel, provider, current);
+	if (!model) return undefined;
+
+	const profile: ModelProfile = {
+		provider: model.provider,
+		model: model.id,
+		thinkingLevel: model.reasoning ? current.thinkingLevel : "off",
+	};
+	if (!model.reasoning) return profile;
+
+	const thinkingLevel = await selectThinkingLevel(ctx, roleLabel, profile);
+	if (!thinkingLevel) return undefined;
+	return { ...profile, thinkingLevel };
+}
+
+async function configureRole(
+	ctx: ExtensionCommandContext,
+	available: AvailableModel[],
+	config: GoalaConfig,
+	role: { key: ModelRole; label: string },
+): Promise<boolean> {
+	const current = config[role.key];
+	const currentModel = available.find(
+		(model) =>
+			model.provider === current.provider && model.id === current.model,
+	);
+	const actions = [
+		KEEP_CURRENT,
+		...(currentModel?.reasoning ? [CHANGE_REASONING] : []),
+		CHANGE_MODEL,
+	];
+	const action = await ctx.ui.select(
+		`${role.label}\nCurrent: ${profileLabel(ctx, available, current)}`,
+		actions,
+	);
+	if (!action) return false;
+	if (action === KEEP_CURRENT) return true;
+
+	if (action === CHANGE_REASONING) {
+		const thinkingLevel = await selectThinkingLevel(ctx, role.label, current);
+		if (!thinkingLevel) return false;
+		setProfile(config, role.key, { ...current, thinkingLevel });
+		return true;
+	}
+
+	const profile = await changeModel(ctx, available, role.label, current);
+	if (!profile) return false;
+	setProfile(config, role.key, profile);
+	return true;
+}
+
+function reviewSummary(
+	ctx: ExtensionCommandContext,
+	available: AvailableModel[],
+	config: GoalaConfig,
+): string {
+	return MODEL_ROLES.map(
+		(role) =>
+			`${role.label}: ${profileLabel(ctx, available, config[role.key])}`,
+	).join("\n");
 }
 
 export async function selectModelRoles(
@@ -59,51 +281,25 @@ export async function selectModelRoles(
 
 	const proposed = structuredClone(current);
 	for (const role of MODEL_ROLES) {
-		const existing = proposed[role.key];
-		const ordered = [...available].sort((left, right) => {
-			const leftCurrent =
-				left.provider === existing.provider && left.id === existing.model;
-			const rightCurrent =
-				right.provider === existing.provider && right.id === existing.model;
-			if (leftCurrent !== rightCurrent) return leftCurrent ? -1 : 1;
-			return `${left.provider}/${left.id}`.localeCompare(`${right.provider}/${right.id}`);
-		});
-		const choices = ordered.map((model) => {
-			const provider = ctx.modelRegistry.getProviderDisplayName(model.provider);
-			const name = model.name && model.name !== model.id ? `${model.name} · ` : "";
-			return `${provider} · ${name}${model.provider}/${model.id}`;
-		});
-		const selected = await ctx.ui.select(
-			`${role.label} model\nCurrent: ${profileLabel(existing)}`,
-			choices,
+		if (!(await configureRole(ctx, available, proposed, role))) return undefined;
+	}
+
+	while (true) {
+		const action = await ctx.ui.select(
+			`Review Goala configuration\n${reviewSummary(ctx, available, proposed)}`,
+			[SAVE_CONFIGURATION, EDIT_PHASE, CANCEL],
 		);
-		if (!selected) return undefined;
-		const model = ordered[choices.indexOf(selected)];
-		if (!model) return undefined;
+		if (!action || action === CANCEL) return undefined;
+		if (action === SAVE_CONFIGURATION) return proposed;
 
-		let thinkingLevel: ThinkingLevel = "off";
-		if (model.reasoning) {
-			const selectedThinking = await ctx.ui.select(
-				`${role.label} reasoning\n${model.provider}/${model.id}`,
-				[...THINKING_LEVELS],
-			);
-			if (!selectedThinking) return undefined;
-			thinkingLevel = selectedThinking as ThinkingLevel;
-		}
-
-		const profile: ModelProfile = {
-			provider: model.provider,
-			model: model.id,
-			thinkingLevel,
-		};
-		if (role.key === "fallbackExecutor") {
-			proposed.fallbackExecutor = {
-				...profile,
-				afterRepairCycle: current.fallbackExecutor.afterRepairCycle,
-			};
-		} else {
-			proposed[role.key] = profile;
+		const selectedRole = await ctx.ui.select(
+			"Choose a phase to edit",
+			MODEL_ROLES.map((role) => role.label),
+		);
+		if (!selectedRole) return undefined;
+		const role = MODEL_ROLES.find((candidate) => candidate.label === selectedRole);
+		if (!role || !(await configureRole(ctx, available, proposed, role))) {
+			return undefined;
 		}
 	}
-	return proposed;
 }

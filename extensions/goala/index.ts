@@ -605,7 +605,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 		);
 		if (missing.length > 0) {
 			ctx.ui.notify(
-				`Preset not saved; unavailable model(s): ${missing.map((model) => `${model.provider}/${model.id}`).join(", ")}.`,
+				`Configuration not saved; unavailable model(s): ${missing.map((model) => `${model.provider}/${model.id}`).join(", ")}.`,
 				"warning",
 			);
 			return;

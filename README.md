@@ -39,7 +39,7 @@ pi install npm:pi-goala
 Pin a release for reproducible team installations:
 
 ```text
-pi install npm:pi-goala@0.3.0
+pi install npm:pi-goala@0.3.1
 ```
 
 Pi's package command both downloads Goala and registers its extension. A plain
@@ -49,7 +49,7 @@ supported installation path.
 From GitHub or a local checkout:
 
 ```text
-pi install git:github.com/barryking/pi-goala@v0.3.0
+pi install git:github.com/barryking/pi-goala@v0.3.1
 pi install /absolute/path/to/pi-goala
 ```
 
@@ -115,7 +115,7 @@ Useful commands:
 /memory retire <id>     Exclude an obsolete episode from recall
 /memory restore <id>    Restore a retired episode
 /goala-setup            Choose a model preset
-/goala-setup custom     Choose an available provider/model for every role
+/goala-setup custom     Review or change each role's model and reasoning
 /goala-setup status     Show effective configuration
 ```
 
@@ -383,8 +383,11 @@ when Pi started. Run `/goala-setup current` to persist that portable
 single-model configuration. Run `/goala-setup custom` to choose an
 authenticated provider/model and reasoning level separately for planning,
 execution, step verification, final verification, and repeated repair. The
-interactive picker reads Pi's available model registry and saves only after
-every role has been selected.
+interactive wizard defaults to keeping each current role. It can change
+reasoning alone or select a provider followed by one of that provider's
+available models. Provider selection is skipped when only one is authenticated.
+A final summary can be edited, saved, or cancelled; nothing is written before
+save.
 
 Advanced users can edit the same per-role profiles in
 `~/.pi/agent/pi-goala/config.json`.

@@ -124,9 +124,10 @@ step verification, and a balanced fallback after repeated repair. Independent
 step context and the final strong verifier preserve the trust boundary without
 paying the strongest-model cost at every human checkpoint. A portable
 current-model preset is available for other providers. The advanced setup
-enumerates Pi's authenticated available models and stores provider, model, and
-reasoning independently for every role; mixed-provider workflows therefore use
-the same phase-routing path as the bundled preset.
+defaults to retaining each role, supports reasoning-only changes, and filters
+models after provider selection. It stores provider, model, and reasoning
+independently for every role only after final review; mixed-provider workflows
+therefore use the same phase-routing path as the bundled preset.
 
 If a configured model cannot be resolved and current-model fallback is
 enabled, Goala uses the model that was active when the extension session

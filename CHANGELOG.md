@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 (2026-07-26)
+
+- Make each phase default to keeping its current model configuration.
+- Separate reasoning-effort changes from provider/model changes.
+- Select provider, then a filtered model, while skipping provider selection
+  when only one authenticated provider is available.
+- Review, edit, save, or cancel the complete configuration atomically.
+
 ## 0.3.0 (2026-07-26)
 
 - Add interactive per-phase provider, model, and reasoning selection from Pi's
