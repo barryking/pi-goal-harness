@@ -30,6 +30,8 @@
   repository ancestry labels, and visible memory-health diagnostics.
 - Make full redacted transcript retention opt-in and harden evidence directory
   naming and duplicate writes.
+- Split the extension entry point into clearly owned `tools`, `session`,
+  `policy`, and `presenters` modules, with direct boundary tests.
 - Document the original one-fixture benchmark as a retrieval experiment and
   define a multi-condition organic lifecycle evaluation.
 
