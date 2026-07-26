@@ -9,6 +9,7 @@ import {
 	GOALA_SETUP_PRESETS,
 	loadConfig,
 	writeConfig,
+	type GoalaConfig,
 	type ModelProfile,
 	type ReviewPolicy,
 	type ThinkingLevel,
@@ -40,6 +41,7 @@ import {
 	moveToFreshSession,
 	slicePhaseContext,
 } from "./session.ts";
+import { selectModelRoles } from "./setup.ts";
 import {
 	formatSourceDrift,
 	inspectGoalSources,
@@ -142,7 +144,7 @@ export default function goala(pi: ExtensionAPI): void {
 		}
 
 		const profile = profileForPhase();
-		let model = ctx.modelRegistry.find(config.provider, profile.model);
+		let model = ctx.modelRegistry.find(profile.provider, profile.model);
 		if (!model && config.allowCurrentModelFallback) {
 			const fallback = sessionDefaultModel ?? (ctx.model
 				? { provider: ctx.model.provider, id: ctx.model.id }
@@ -151,7 +153,7 @@ export default function goala(pi: ExtensionAPI): void {
 				model = ctx.modelRegistry.find(fallback.provider, fallback.id);
 				if (model && !fallbackNoticeShown) {
 					ctx.ui.notify(
-						`Goala: ${config.provider}/${profile.model} is unavailable; using ${fallback.provider}/${fallback.id}. Run /goala-setup to configure model roles.`,
+						`Goala: ${profile.provider}/${profile.model} is unavailable; using ${fallback.provider}/${fallback.id}. Run /goala-setup to configure model roles.`,
 						"warning",
 					);
 					fallbackNoticeShown = true;
@@ -160,7 +162,7 @@ export default function goala(pi: ExtensionAPI): void {
 		}
 		if (!model) {
 			ctx.ui.notify(
-				`Goala: model not found: ${config.provider}/${profile.model}. Run /goala-setup current or edit the namespaced config.`,
+				`Goala: model not found: ${profile.provider}/${profile.model}. Run /goala-setup current or edit the namespaced config.`,
 				"error",
 			);
 			updateGoalUi(ctx, state);
@@ -169,7 +171,10 @@ export default function goala(pi: ExtensionAPI): void {
 
 		const selected = await pi.setModel(model);
 		if (!selected) {
-			ctx.ui.notify(`Goala: authenticate ${config.provider} before using ${profile.model}`, "warning");
+			ctx.ui.notify(
+				`Goala: authenticate ${profile.provider} before using ${profile.model}`,
+				"warning",
+			);
 			updateGoalUi(ctx, state);
 			return false;
 		}
@@ -558,10 +563,13 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 		if (!choice && ctx.hasUI) {
 			const selected = await ctx.ui.select("Goala setup", [
 				...GOALA_SETUP_PRESETS.map((preset) => preset.label),
+				"Configure each phase",
 				"Show current configuration",
 			]);
 			choice = selected === "Show current configuration"
 				? "status"
+				: selected === "Configure each phase"
+					? "custom"
 				: GOALA_SETUP_PRESETS.find((preset) => preset.label === selected)?.id ?? "";
 		}
 
@@ -570,21 +578,27 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 			return;
 		}
 
-		const preset = GOALA_SETUP_PRESETS.find((candidate) => candidate.id === choice);
-		if (!preset) {
-			ctx.ui.notify(
-				`Usage: /goala-setup [status | ${GOALA_SETUP_PRESETS.map((candidate) => candidate.id).join(" | ")}]`,
-				"warning",
-			);
-			return;
-		}
-		const current = ctx.model
-			? { provider: ctx.model.provider, id: ctx.model.id }
-			: sessionDefaultModel;
-		const proposed = preset.create(current);
-		if (!proposed) {
-			ctx.ui.notify(`Preset "${preset.label}" requires a current model.`, "warning");
-			return;
+		let proposed: GoalaConfig | undefined;
+		if (choice === "custom") {
+			proposed = await selectModelRoles(ctx, config);
+			if (!proposed) return;
+		} else {
+			const preset = GOALA_SETUP_PRESETS.find((candidate) => candidate.id === choice);
+			if (!preset) {
+				ctx.ui.notify(
+					`Usage: /goala-setup [status | custom | ${GOALA_SETUP_PRESETS.map((candidate) => candidate.id).join(" | ")}]`,
+					"warning",
+				);
+				return;
+			}
+			const current = ctx.model
+				? { provider: ctx.model.provider, id: ctx.model.id }
+				: sessionDefaultModel;
+			proposed = preset.create(current);
+			if (!proposed) {
+				ctx.ui.notify(`Preset "${preset.label}" requires a current model.`, "warning");
+				return;
+			}
 		}
 		const missing = configuredModels(proposed).filter(
 			(model) => !ctx.modelRegistry.find(model.provider, model.id),
@@ -605,7 +619,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 	}
 
 	pi.registerCommand("goala-setup", {
-		description: `Configure model roles: /goala-setup [status | ${GOALA_SETUP_PRESETS.map((preset) => preset.id).join(" | ")}]`,
+		description: `Configure model roles: /goala-setup [status | custom | ${GOALA_SETUP_PRESETS.map((preset) => preset.id).join(" | ")}]`,
 		handler: configureGoala,
 	});
 

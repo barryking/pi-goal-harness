@@ -46,35 +46,43 @@ and restore the backup to `~/.pi/agent/`.
 /goala-setup status
 /goala-setup openai
 /goala-setup current
+/goala-setup custom
 ```
 
 `openai` selects the tested Sol/Luna/Terra model split when those models are
 available. `current` assigns the model active at Pi startup to every role.
+`custom` interactively selects a provider/model and reasoning level for each
+role from Pi's authenticated, available model registry. Cancelling any prompt
+leaves the existing configuration unchanged.
 
 ## Full schema
 
 ```json
 {
-  "configVersion": 1,
-  "provider": "openai-codex",
+  "configVersion": 2,
   "planner": {
+    "provider": "openai-codex",
     "model": "gpt-5.6-sol",
     "thinkingLevel": "medium"
   },
   "executor": {
+    "provider": "openai-codex",
     "model": "gpt-5.6-luna",
     "thinkingLevel": "medium"
   },
   "fallbackExecutor": {
+    "provider": "openai-codex",
     "model": "gpt-5.6-terra",
     "thinkingLevel": "medium",
     "afterRepairCycle": 2
   },
   "stepVerifier": {
+    "provider": "openai-codex",
     "model": "gpt-5.6-luna",
     "thinkingLevel": "medium"
   },
   "verifier": {
+    "provider": "openai-codex",
     "model": "gpt-5.6-sol",
     "thinkingLevel": "medium"
   },
@@ -95,6 +103,10 @@ available. `current` assigns the model active at Pi startup to every role.
 ```
 
 Restart Pi or use `/reload` after manually editing the file.
+
+Version 1 configuration used one top-level `provider`. Goala reads that schema,
+applies the provider to every role, and writes only version 2 when the
+configuration is next saved.
 
 `reviewPolicy` accepts:
 

@@ -12,6 +12,7 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
 export type ReviewPolicy = "final" | "per-step";
 
 export interface ModelProfile {
+	provider: string;
 	model: string;
 	thinkingLevel: ThinkingLevel;
 }
@@ -28,8 +29,7 @@ export interface GoalaSetupPreset {
 }
 
 export interface GoalaConfig {
-	configVersion: 1;
-	provider: string;
+	configVersion: 2;
 	planner: ModelProfile;
 	executor: ModelProfile;
 	fallbackExecutor: ModelProfile & { afterRepairCycle: number };
@@ -44,13 +44,33 @@ export interface GoalaConfig {
 }
 
 export const OPENAI_CODEX_PRESET: GoalaConfig = {
-	configVersion: 1,
-	provider: "openai-codex",
-	planner: { model: "gpt-5.6-sol", thinkingLevel: "medium" },
-	executor: { model: "gpt-5.6-luna", thinkingLevel: "medium" },
-	fallbackExecutor: { model: "gpt-5.6-terra", thinkingLevel: "medium", afterRepairCycle: 2 },
-	stepVerifier: { model: "gpt-5.6-luna", thinkingLevel: "medium" },
-	verifier: { model: "gpt-5.6-sol", thinkingLevel: "medium" },
+	configVersion: 2,
+	planner: {
+		provider: "openai-codex",
+		model: "gpt-5.6-sol",
+		thinkingLevel: "medium",
+	},
+	executor: {
+		provider: "openai-codex",
+		model: "gpt-5.6-luna",
+		thinkingLevel: "medium",
+	},
+	fallbackExecutor: {
+		provider: "openai-codex",
+		model: "gpt-5.6-terra",
+		thinkingLevel: "medium",
+		afterRepairCycle: 2,
+	},
+	stepVerifier: {
+		provider: "openai-codex",
+		model: "gpt-5.6-luna",
+		thinkingLevel: "medium",
+	},
+	verifier: {
+		provider: "openai-codex",
+		model: "gpt-5.6-sol",
+		thinkingLevel: "medium",
+	},
 	reviewPolicy: "final",
 	autoVerify: true,
 	maxRepairCycles: 3,
@@ -74,20 +94,69 @@ export function configPath(): string {
 	return join(goalaHome(), "config.json");
 }
 
-function mergeConfig(parsed: Partial<GoalaConfig>): GoalaConfig {
+type PersistedConfig = Partial<GoalaConfig> & {
+	provider?: unknown;
+};
+
+function profileProvider(
+	profile: Partial<ModelProfile> | undefined,
+	legacyProvider: unknown,
+	fallback: ModelProfile,
+): string {
+	if (typeof profile?.provider === "string" && profile.provider) return profile.provider;
+	if (typeof legacyProvider === "string" && legacyProvider) return legacyProvider;
+	return fallback.provider;
+}
+
+function mergeProfile(
+	profile: Partial<ModelProfile> | undefined,
+	legacyProvider: unknown,
+	fallback: ModelProfile,
+): ModelProfile {
+	return {
+		...fallback,
+		...profile,
+		provider: profileProvider(profile, legacyProvider, fallback),
+	};
+}
+
+function mergeConfig(parsed: PersistedConfig): GoalaConfig {
+	const { provider: legacyProvider, ...current } = parsed;
 	return {
 		...OPENAI_CODEX_PRESET,
-		...parsed,
-		configVersion: 1,
+		...current,
+		configVersion: 2,
 		reviewPolicy: parsed.reviewPolicy === "per-step" ? "per-step" : "final",
-		planner: { ...OPENAI_CODEX_PRESET.planner, ...parsed.planner },
-		executor: { ...OPENAI_CODEX_PRESET.executor, ...parsed.executor },
+		planner: mergeProfile(
+			parsed.planner,
+			legacyProvider,
+			OPENAI_CODEX_PRESET.planner,
+		),
+		executor: mergeProfile(
+			parsed.executor,
+			legacyProvider,
+			OPENAI_CODEX_PRESET.executor,
+		),
 		fallbackExecutor: {
-			...OPENAI_CODEX_PRESET.fallbackExecutor,
-			...parsed.fallbackExecutor,
+			...mergeProfile(
+				parsed.fallbackExecutor,
+				legacyProvider,
+				OPENAI_CODEX_PRESET.fallbackExecutor,
+			),
+			afterRepairCycle:
+				parsed.fallbackExecutor?.afterRepairCycle ??
+				OPENAI_CODEX_PRESET.fallbackExecutor.afterRepairCycle,
 		},
-		stepVerifier: { ...OPENAI_CODEX_PRESET.stepVerifier, ...parsed.stepVerifier },
-		verifier: { ...OPENAI_CODEX_PRESET.verifier, ...parsed.verifier },
+		stepVerifier: mergeProfile(
+			parsed.stepVerifier,
+			legacyProvider,
+			OPENAI_CODEX_PRESET.stepVerifier,
+		),
+		verifier: mergeProfile(
+			parsed.verifier,
+			legacyProvider,
+			OPENAI_CODEX_PRESET.verifier,
+		),
 		memory: { ...OPENAI_CODEX_PRESET.memory, ...parsed.memory },
 	};
 }
@@ -95,7 +164,7 @@ function mergeConfig(parsed: Partial<GoalaConfig>): GoalaConfig {
 export function loadConfig(): GoalaConfig {
 	let config = OPENAI_CODEX_PRESET;
 	try {
-		const parsed = JSON.parse(readFileSync(configPath(), "utf8")) as Partial<GoalaConfig>;
+		const parsed = JSON.parse(readFileSync(configPath(), "utf8")) as PersistedConfig;
 		config = mergeConfig(parsed);
 	} catch {
 		config = mergeConfig({});
@@ -129,12 +198,11 @@ export function currentModelConfig(
 ): GoalaConfig {
 	return {
 		...OPENAI_CODEX_PRESET,
-		provider,
-		planner: { model, thinkingLevel },
-		executor: { model, thinkingLevel },
-		fallbackExecutor: { model, thinkingLevel, afterRepairCycle: 2 },
-		stepVerifier: { model, thinkingLevel },
-		verifier: { model, thinkingLevel },
+		planner: { provider, model, thinkingLevel },
+		executor: { provider, model, thinkingLevel },
+		fallbackExecutor: { provider, model, thinkingLevel, afterRepairCycle: 2 },
+		stepVerifier: { provider, model, thinkingLevel },
+		verifier: { provider, model, thinkingLevel },
 	};
 }
 
@@ -165,7 +233,7 @@ export function configuredModels(config: GoalaConfig): ModelIdentity[] {
 		config.fallbackExecutor,
 		config.stepVerifier,
 		config.verifier,
-	].map((profile) => ({ provider: config.provider, id: profile.model }));
+	].map((profile) => ({ provider: profile.provider, id: profile.model }));
 	return identities.filter(
 		(identity, index) =>
 			identities.findIndex(
@@ -178,13 +246,17 @@ export function configuredModels(config: GoalaConfig): ModelIdentity[] {
 export function formatConfig(config: GoalaConfig): string {
 	return [
 		`Config: ${configPath()}`,
-		`Planner: ${config.provider}/${config.planner.model}:${config.planner.thinkingLevel}`,
-		`Executor: ${config.provider}/${config.executor.model}:${config.executor.thinkingLevel}`,
-		`Step verifier: ${config.provider}/${config.stepVerifier.model}:${config.stepVerifier.thinkingLevel}`,
-		`Verifier: ${config.provider}/${config.verifier.model}:${config.verifier.thinkingLevel}`,
-		`Fallback: ${config.provider}/${config.fallbackExecutor.model}:${config.fallbackExecutor.thinkingLevel} from repair ${config.fallbackExecutor.afterRepairCycle}`,
+		`Planner: ${formatProfile(config.planner)}`,
+		`Executor: ${formatProfile(config.executor)}`,
+		`Step verifier: ${formatProfile(config.stepVerifier)}`,
+		`Verifier: ${formatProfile(config.verifier)}`,
+		`Fallback: ${formatProfile(config.fallbackExecutor)} from repair ${config.fallbackExecutor.afterRepairCycle}`,
 		`Review policy: ${config.reviewPolicy}`,
 		`Memory: ${config.memory.enabled ? "enabled" : "disabled"}; auto-recall ${config.memory.autoRecall ? "on" : "off"}`,
 		`Current-model fallback: ${config.allowCurrentModelFallback ? "allowed" : "disabled"}`,
 	].join("\n");
+}
+
+function formatProfile(profile: ModelProfile): string {
+	return `${profile.provider}/${profile.model}:${profile.thinkingLevel}`;
 }
