@@ -53,6 +53,9 @@ test("idle installation preserves the host model, tools, and command policy", as
 
 	goala(pi as never);
 	assert.ok(commands.has("goala-setup"));
+	assert.ok(!commands.has("memory"));
+	assert.ok(!commands.has("memory-status"));
+	assert.ok(!registeredTools.some((name) => name.startsWith("memory")));
 
 	const model = { provider: "example", id: "chosen-model" };
 	const ctx = {

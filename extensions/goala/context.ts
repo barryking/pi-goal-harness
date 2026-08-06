@@ -1,4 +1,4 @@
-import { formatMemoryPacket, type MemoryCandidate, type MemoryConfig } from "./memory.ts";
+import type { GoalMemoryContext, GoalMemoryReference } from "./dream.ts";
 import type { GoalSource } from "./sources.ts";
 
 interface ContextStep {
@@ -20,8 +20,36 @@ export interface PhaseContextState {
 	acceptanceCriteria: string[];
 	phase: string;
 	plan: ContextStep[];
-	recalledMemories: MemoryCandidate[];
+	memoryContext: GoalMemoryContext;
 	verification?: ContextVerification;
+}
+
+function formatMemoryReference(reference: GoalMemoryReference): string {
+	return `### ${reference.authority.toUpperCase()}: ${reference.storeName}/${reference.path}
+Pinned version: ${reference.commit}
+Document sha256: ${reference.sha256}
+
+${reference.content}`;
+}
+
+function memoryText(state: PhaseContextState): string {
+	const references = state.phase === "verifying" || state.phase === "verifying-step"
+		? state.memoryContext.references.filter((reference) => reference.authority === "binding")
+		: state.memoryContext.references;
+	if (references.length === 0) {
+		if (state.phase !== "planning") return "";
+		if (state.memoryContext.status === "available") {
+			return `REMEMBERED GUIDANCE
+- ${state.memoryContext.message ?? "No Dream documents were selected for this Goal."}`;
+		}
+		return `REMEMBERED GUIDANCE
+- Dream guidance is ${state.memoryContext.status} for this Goal.
+- ${state.memoryContext.message ?? "Continue using the objective, sources, repository, and current instructions."}`;
+	}
+	return `REMEMBERED GUIDANCE SNAPSHOT
+These exact Dream documents were selected when the Goal began. Advisory documents are leads to confirm against current files. Binding documents are constraints that the plan, implementation, and verification must satisfy.
+
+${references.map(formatMemoryReference).join("\n\n")}`;
 }
 
 function criteriaText(state: PhaseContextState): string {
@@ -55,22 +83,18 @@ function sourceText(state: PhaseContextState): string {
 		.join("\n");
 	return `AUTHORITATIVE GOAL SOURCES
 ${references}
-Read the current contents of every source before acting. Treat them as requirements, not recalled memory. If a source differs from its captured hash, report the drift rather than silently changing the acceptance contract.`;
+Read the current contents of every source before acting. Treat them as requirements, not remembered guidance. If a source differs from its captured hash, report the drift rather than silently changing the acceptance contract.`;
 }
 
 export function buildPhaseContext(
 	state: PhaseContextState,
-	memoryConfig: MemoryConfig,
 ): string {
 	const criteria = criteriaText(state);
 	const defects =
 		state.verification?.verdict === "fail" && state.verification.defects.length > 0
 			? state.verification.defects.map((defect) => `- ${defect}`).join("\n")
 			: "- None recorded.";
-	const memoryPacket =
-		state.phase === "planning" || state.phase === "executing"
-			? formatMemoryPacket(state.recalledMemories, memoryConfig)
-			: "";
+	const memoryPacket = memoryText(state);
 	const sources = sourceText(state);
 
 	if (state.phase === "planning") {
@@ -80,7 +104,7 @@ ${state.objective}
 ${sources ? `${sources}\n\n` : ""}PLANNING STATE
 Acceptance criteria and implementation steps have not yet been approved.
 
-${memoryPacket || "RECALLED VERIFIED MEMORY\n- No relevant verified memory was found."}`;
+${memoryPacket}`;
 	}
 
 	if (state.phase === "executing") {
@@ -110,8 +134,8 @@ ${criteria}
 PLANNED VERIFICATION METHODS
 ${verificationPlanText(state)}
 
-TRUST BOUNDARY
-Do not rely on executor completion claims, progress evidence, recalled memories, or previous outcome summaries. Inspect the repository and produce fresh evidence.`;
+${memoryPacket ? `${memoryPacket}\n\n` : ""}TRUST BOUNDARY
+Do not rely on executor completion claims, progress evidence, advisory remembered guidance, or previous outcome summaries. Inspect the repository and produce fresh evidence. Binding guidance is part of the Goal contract and must be checked against the result.`;
 	}
 
 	if (state.phase === "verifying-step") {
@@ -122,8 +146,8 @@ ${state.objective}
 ${sources ? `${sources}\n\n` : ""}STEP TO VERIFY
 ${step ? `${step.id}. ${step.title}\n${step.description}\nVerification method: ${step.verification}` : "No implemented step was found."}
 
-TRUST BOUNDARY
-Do not rely on executor completion claims, progress evidence, recalled memories, or previous outcome summaries. Inspect the repository and produce fresh evidence for this step only.`;
+${memoryPacket ? `${memoryPacket}\n\n` : ""}TRUST BOUNDARY
+Do not rely on executor completion claims, progress evidence, advisory remembered guidance, or previous outcome summaries. Inspect the repository and produce fresh evidence for this step only. Binding guidance is part of the Goal contract.`;
 	}
 
 	if (state.phase === "awaiting-review") {

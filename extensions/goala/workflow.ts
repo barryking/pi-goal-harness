@@ -1,8 +1,12 @@
 import type { ReviewPolicy } from "./config.ts";
+import { randomUUID } from "node:crypto";
 import {
-	newGoalId,
-	type MemoryCandidate,
-} from "./memory.ts";
+	MAX_GOAL_MEMORY_CHARS,
+	MAX_GOAL_MEMORY_REFERENCES,
+	emptyGoalMemoryContext,
+	type GoalMemoryContext,
+	type GoalMemoryReference,
+} from "./dream.ts";
 import {
 	MAX_GOAL_SOURCE_BYTES,
 	MAX_GOAL_SOURCES,
@@ -54,7 +58,7 @@ export interface PlanStep {
 }
 
 export interface GoalState {
-	version: 1 | 2 | 3 | 4;
+	version: 1 | 2 | 3 | 4 | 5;
 	goalId: string;
 	objective: string;
 	sources: GoalSource[];
@@ -67,15 +71,18 @@ export interface GoalState {
 	stepRepairCycles: number;
 	friction: string[];
 	openItems: string[];
-	recalledMemories: MemoryCandidate[];
+	memoryContext: GoalMemoryContext;
 	sessionFiles: string[];
-	startCommit?: string;
 	verification?: VerificationResult;
 	reviewFeedback?: string;
 	pausedFrom?: Phase;
 	blockedReason?: string;
 	startedAt?: string;
 	updatedAt: string;
+}
+
+export function newGoalId(): string {
+	return randomUUID();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -177,9 +184,39 @@ function normalizeSources(value: unknown): GoalSource[] {
 	});
 }
 
+function normalizeMemoryContext(value: unknown): GoalMemoryContext {
+	if (!isRecord(value)) return emptyGoalMemoryContext();
+	const status = value.status === "available" || value.status === "error"
+		? value.status
+		: "unavailable";
+	let totalChars = 0;
+	const references = Array.isArray(value.references)
+		? value.references.slice(0, MAX_GOAL_MEMORY_REFERENCES).flatMap((reference) => {
+			if (
+				!isRecord(reference) ||
+				(reference.authority !== "advisory" && reference.authority !== "binding") ||
+				(reference.storeScope !== "repository" && reference.storeScope !== "workspace") ||
+				!["storeId", "storeName", "commit", "path", "sha256", "content"].every(
+					(key) => typeof reference[key] === "string",
+				) ||
+				!/^[a-f0-9]{64}$/.test(reference.sha256 as string) ||
+				(reference.content as string).length + totalChars > MAX_GOAL_MEMORY_CHARS
+			) return [];
+			totalChars += (reference.content as string).length;
+			return [reference as unknown as GoalMemoryReference];
+		})
+		: [];
+	return {
+		status,
+		repositoryIdentity: optionalString(value.repositoryIdentity),
+		references,
+		message: optionalString(value.message),
+	};
+}
+
 export function emptyState(reviewPolicy: ReviewPolicy = "final"): GoalState {
 	return {
-		version: 4,
+		version: 5,
 		goalId: "",
 		objective: "",
 		sources: [],
@@ -192,21 +229,21 @@ export function emptyState(reviewPolicy: ReviewPolicy = "final"): GoalState {
 		stepRepairCycles: 0,
 		friction: [],
 		openItems: [],
-		recalledMemories: [],
+		memoryContext: emptyGoalMemoryContext(),
 		sessionFiles: [],
 		updatedAt: new Date().toISOString(),
 	};
 }
 
 export function normalizeState(value: unknown): GoalState {
-	if (!isRecord(value) || ![1, 2, 3, 4].includes(Number(value.version))) return emptyState();
+	if (!isRecord(value) || ![1, 2, 3, 4, 5].includes(Number(value.version))) return emptyState();
 	const phase = PHASES.includes(value.phase as Phase) ? value.phase as Phase : "idle";
 	const pausedFrom = PHASES.includes(value.pausedFrom as Phase)
 		? value.pausedFrom as Phase
 		: undefined;
 	return {
 		...emptyState(),
-		version: 4,
+		version: 5,
 		goalId: optionalString(value.goalId) || newGoalId(),
 		objective: optionalString(value.objective) ?? "",
 		sources: normalizeSources(value.sources),
@@ -219,11 +256,8 @@ export function normalizeState(value: unknown): GoalState {
 		stepRepairCycles: nonNegativeInteger(value.stepRepairCycles),
 		friction: stringArray(value.friction),
 		openItems: stringArray(value.openItems),
-		recalledMemories: Array.isArray(value.recalledMemories)
-			? value.recalledMemories as MemoryCandidate[]
-			: [],
+		memoryContext: normalizeMemoryContext(value.memoryContext),
 		sessionFiles: stringArray(value.sessionFiles),
-		startCommit: optionalString(value.startCommit),
 		verification: normalizeVerification(value.verification),
 		reviewFeedback: optionalString(value.reviewFeedback),
 		pausedFrom,

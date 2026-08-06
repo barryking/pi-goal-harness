@@ -5,7 +5,7 @@ Goala is one Pi extension with three responsibilities:
 1. persist a goal and its acceptance contract;
 2. route work through planning, execution, independent verification, and a
    bounded repair loop;
-3. retrieve and promote bounded verified memory.
+3. optionally capture bounded, versioned guidance from Dream when a Goal begins.
 
 ## Module boundaries
 
@@ -22,7 +22,7 @@ own one concern:
 | `presenters.ts` | Status, plan, and widget rendering |
 | `context.ts` | Minimal phase-specific model context |
 | `workflow.ts` | Goal-state types, normalization, and invariants |
-| `memory.ts` | Verified episodic storage and retrieval |
+| `dream.ts` | Optional read-only adapter to Dream's generic interop API |
 | `recovery.ts` | Discovery of unfinished goals in saved Pi sessions |
 | `routing.ts` | Model-role selection and fallback-executor activation |
 | `setup.ts` | Interactive available-model selection for each lifecycle role |
@@ -32,10 +32,10 @@ Simple concern names are intentional: the directory already supplies the
 `goala` context, so prefixes such as `phase-` and suffixes such as
 `-boundary` add length without clarifying ownership.
 
-Public commands, saved-session entries, phase markers, storage, and environment
-variables all use the Goala namespace.
+Public commands, saved-session entries, phase markers, and environment variables
+all use the Goala namespace.
 
-## Four-memory placement
+## Memory boundary
 
 The CoALA-inspired types are separated by responsibility:
 
@@ -44,11 +44,12 @@ The CoALA-inspired types are separated by responsibility:
 | Working | Phase-specific context assembled by this extension |
 | Semantic | Pi-loaded `AGENTS.md` and version-controlled project documentation |
 | Procedural | Pi skills and this extension's executable workflow |
-| Episodic | Distilled, verifier-grounded prior-task episodes in SQLite |
+| Episodic | Dream, when installed; Goala only consumes selected promoted documents |
 
-SQLite is not a replacement for project knowledge or skills. Entire-inspired
-session evidence and commit linkage provide provenance for an episode; the
-smaller recalled packet contains only the parts useful to a later task.
+Goala does not own durable episodic storage. `dream.ts` dynamically loads only
+`pi-dream/interop`, performs one search at Goal creation, reads selected exact
+versions, and stores a 64,000-character maximum snapshot in Goal state. Dream
+has no Goal or phase concepts, and Goala never calls a Dream write path.
 
 ## Lifecycle
 
@@ -74,13 +75,13 @@ clean planning session -- submit_plan --> awaiting explicit /execute
                                       |             |
                                     PASS           FAIL
                                       |             |
-                               promote memory   bounded repair
+                                  complete      bounded repair
 ```
 
 Goal state is stored as Pi custom session entries. It includes the objective,
 authoritative source paths and hashes, criteria, review policy, plan,
 step-review evidence, progress, repair counts, final verification report,
-memory references, and session evidence paths.
+selected Dream document snapshots, and session evidence paths.
 
 The state remains attached to the saved Pi session tree. A plain `pi` launch
 starts a new session rather than automatically adopting another session's
@@ -95,11 +96,11 @@ coexist.
 
 | Phase | Included | Excluded |
 |---|---|---|
-| Planning | Objective and bounded verified recall | Old raw transcripts |
-| Execution | Criteria, remaining steps, current defects, bounded recall | Completed-step evidence and planning transcript |
-| Step verification | Current step and its verification method | Recalled memory and executor claims |
+| Planning | Objective and selected advisory/binding guidance | Old raw transcripts |
+| Execution | Criteria, remaining steps, current defects, selected guidance | Completed-step evidence and planning transcript |
+| Step verification | Current step, its verification method, and binding guidance | Advisory guidance and executor claims |
 | Human review | Verified step summary and read-only repository access | Editing and later-step execution |
-| Verification | Objective, criteria, verification methods, current observations | Recalled memory and executor claims |
+| Verification | Objective, criteria, methods, current observations, and binding guidance | Advisory guidance and executor claims |
 | Repair | Remaining work and latest defects | Superseded completion evidence |
 
 Authoritative source documents are represented by project-relative paths,
@@ -120,20 +121,20 @@ provenance.
 
 ## Model routing
 
-Roles are configured separately. The bundled preset uses a stronger model for
-planning and final verification, a faster model for implementation and routine
-step verification, and a balanced fallback after repeated repair. Independent
-step context and the final strong verifier preserve the trust boundary without
-paying the strongest-model cost at every human checkpoint. A portable
-current-model preset is available for other providers. The advanced setup
-defaults to retaining each role, supports reasoning-only changes, and filters
-models after provider selection. It stores provider, model, and reasoning
-independently for every role only after final review; mixed-provider workflows
-therefore use the same phase-routing path as the bundled preset.
+Every role follows the model selected by Pi at session startup by default. This
+is a dynamic reference rather than a copied provider/model name. The active Pi
+reasoning setting is clamped using the model's `reasoning` and
+`thinkingLevelMap` metadata, so non-reasoning models run with reasoning off and
+unsupported levels are never requested.
 
-If a configured model cannot be resolved and current-model fallback is
-enabled, Goala uses the model that was active when the extension session
-started and displays a warning.
+Advanced setup can pin provider, model, and reasoning independently for any
+role while leaving the remaining roles attached to Pi's default. The setup UI
+offers only reasoning levels supported by the selected model. Independent
+step context and final verification preserve the trust boundary regardless of
+whether roles share one model or use a mixed-provider configuration.
+
+If a pinned model cannot be resolved and default-model fallback is enabled,
+Goala uses Pi's session-default model and displays a warning.
 
 ## Completion invariant
 
@@ -146,6 +147,5 @@ A goal can enter `complete` only when:
 - every check has non-empty concrete evidence;
 - the defects list is empty.
 
-Memory promotion occurs only inside that same accepted PASS branch. Reusable
-findings must be supplied by the independent verifier, include evidence, and
-are distinct from planner or executor claims.
+Completion writes only Goala Goal state and ordinary Pi session entries. It
+does not create a memory record, Dream Candidate, receipt, or execution graph.

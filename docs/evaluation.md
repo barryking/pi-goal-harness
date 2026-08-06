@@ -1,8 +1,13 @@
 # Evaluation
 
+The local-memory experiments below describe the removed pre-Dream
+implementation and are retained as benchmark provenance. Current Goala has no
+local memory store. Durable-memory evaluations now require Dream's promoted
+documents and its normal repository-scoped session flow.
+
 ## Acceptance policy
 
-A context or memory change is accepted only when:
+A context or Dream-integration change is accepted only when:
 
 1. public and hidden quality do not regress;
 2. verifier independence remains intact;
@@ -12,17 +17,14 @@ A context or memory change is accepted only when:
 
 ## Static evaluation
 
-The deterministic suite covers:
+The current deterministic suite covers:
 
-- verified episode storage and recall;
-- verifier-owned finding promotion through the real workflow;
-- content-hash deduplication;
-- recoverable retirement and restoration;
-- secret redaction;
-- bounded injection;
-- repository provenance labelling and memory health diagnostics;
+- optional Dream provider loading and exact missing-package handling;
+- generic repository discovery, bounded search, and exact-version capture;
+- advisory/binding context isolation and a 64,000-character Goal-state cap;
+- removal of Goala memory tools, commands, configuration, and completion writes;
 - pruning of completed execution evidence;
-- verifier memory isolation;
+- verifier isolation from advisory remembered guidance;
 - bounded authoritative-source references in every active phase without
   copying full PRD contents;
 - project-boundary, UTF-8, file-size, source-count, and source-drift handling;
@@ -31,7 +33,11 @@ The deterministic suite covers:
 - revision feedback and pause/resume at a review checkpoint;
 - final-verifier repair after per-step execution;
 - read-only enforcement before plan and step approval;
-- namespaced paths and user-only file permissions.
+- namespaced configuration and user-only file permissions.
+
+The remaining memory measurements in this document are historical results from
+the former local SQLite design; they do not imply that current Goala writes or
+queries that store.
 
 The synthetic legacy executor packet measured 5,671 characters. The isolated
 packet measured 1,437 characters, a 74.7% reduction.

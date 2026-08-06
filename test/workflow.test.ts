@@ -27,7 +27,8 @@ test("normalizes legacy and malformed workflow state without trusting persisted 
 		],
 	});
 
-	assert.equal(state.version, 4);
+	assert.equal(state.version, 5);
+	assert.deepEqual(state.memoryContext.references, []);
 	assert.equal(state.phase, "idle");
 	assert.equal(state.reviewPolicy, "final");
 	assert.deepEqual(state.acceptanceCriteria, ["valid"]);

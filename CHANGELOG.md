@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 (2026-08-06)
+
+- Replace Goala's SQLite-backed episodic memory with an optional read-only
+  `pi-dream/interop` consumer.
+- Capture user-selected advisory or binding Dream documents as an immutable,
+  bounded Goal-start snapshot and add `/goal context` diagnostics.
+- Remove the SQLite module, memory commands, memory model tools, completion
+  writes, memory configuration/environment variables, and legacy migration
+  paths.
+- Make every model role follow Pi's session-default model by default, remove
+  the vendor-specific OpenAI preset, and use each model's Pi metadata to limit
+  reasoning settings to supported levels.
+- Bump Goal state to version 5 and configuration to version 4; older recalled
+  packets and memory configuration are dropped during normalization.
+- Require Pi 0.83.0 and declare Dream 0.3.0 as an optional peer.
+
 ## 0.3.3 (2026-07-26)
 
 - Rename the memory database from `coala.sqlite3` to `goala.sqlite3` so local

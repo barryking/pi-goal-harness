@@ -11,62 +11,62 @@ import test from "node:test";
 import {
 	configPath,
 	configuredModels,
-	currentModelConfig,
+	fixedModelConfig,
 	formatConfig,
 	GOALA_SETUP_PRESETS,
 	loadConfig,
-	OPENAI_CODEX_PRESET,
+	PI_DEFAULT_CONFIG,
 	writeConfig,
 } from "../extensions/goala/config.ts";
 
 const root = mkdtempSync(join(tmpdir(), "pi-goala-config-"));
 process.env.PI_GOALA_HOME = root;
 
-test("uses the documented OpenAI preset when no user config exists", () => {
+test("uses Pi's dynamic default model when no user config exists", () => {
 	const config = loadConfig();
-	assert.deepEqual(config, OPENAI_CODEX_PRESET);
+	assert.deepEqual(config, PI_DEFAULT_CONFIG);
 	assert.equal(config.reviewPolicy, "final");
-	assert.equal(config.memory.storeColdEvidence, false);
 	assert.equal(configPath(), join(root, "config.json"));
 });
 
-test("writes a namespaced current-model configuration with private permissions", () => {
-	const config = currentModelConfig("example-provider", "fast-model", "low");
+test("writes a namespaced fixed-model configuration with private permissions", () => {
+	const config = fixedModelConfig("example-provider", "fast-model", "low");
 	const target = writeConfig(config);
 	assert.equal(target, join(root, "config.json"));
 	assert.equal(statSync(target).mode & 0o777, 0o600);
 
 	const parsed = JSON.parse(readFileSync(target, "utf8"));
-	assert.equal(parsed.configVersion, 2);
+	assert.equal(parsed.configVersion, 4);
 	assert.equal(parsed.provider, undefined);
 	assert.equal(parsed.planner.provider, "example-provider");
 	assert.equal(parsed.planner.model, "fast-model");
 	assert.equal(parsed.executor.provider, "example-provider");
 	assert.equal(parsed.executor.model, "fast-model");
 	assert.equal(parsed.stepVerifier.model, "fast-model");
-	assert.equal(loadConfig().verifier.model, "fast-model");
+	const loaded = loadConfig();
+	assert.equal(loaded.verifier.kind, "fixed");
+	if (loaded.verifier.kind === "fixed") {
+		assert.equal(loaded.verifier.model, "fast-model");
+	}
 });
 
 test("setup presets are data-driven and expose unique configured models", () => {
-	const openai = GOALA_SETUP_PRESETS.find((preset) => preset.id === "openai");
-	const current = GOALA_SETUP_PRESETS.find((preset) => preset.id === "current");
-	assert.ok(openai);
-	assert.ok(current);
-	assert.deepEqual(openai.create(), OPENAI_CODEX_PRESET);
-	assert.equal(current.create(), undefined);
-
-	const portable = current.create({ provider: "example", id: "model" });
-	assert.ok(portable);
-	assert.deepEqual(configuredModels(portable), [{ provider: "example", id: "model" }]);
+	const defaults = GOALA_SETUP_PRESETS.find((preset) => preset.id === "default");
+	assert.ok(defaults);
+	assert.deepEqual(defaults.create(), PI_DEFAULT_CONFIG);
+	assert.deepEqual(configuredModels(defaults.create()), []);
+	assert.equal(GOALA_SETUP_PRESETS.some((preset) => preset.id === "openai"), false);
+	assert.equal(GOALA_SETUP_PRESETS.some((preset) => preset.id === "current"), false);
 });
 
 test("supports a different provider and model for every role", () => {
-	const config = structuredClone(OPENAI_CODEX_PRESET);
-	config.planner = { provider: "provider-a", model: "planner", thinkingLevel: "high" };
-	config.executor = { provider: "provider-b", model: "executor", thinkingLevel: "low" };
-	config.stepVerifier = { provider: "provider-c", model: "step", thinkingLevel: "medium" };
-	config.verifier = { provider: "provider-d", model: "verifier", thinkingLevel: "xhigh" };
+	const config = structuredClone(PI_DEFAULT_CONFIG);
+	config.planner = { kind: "fixed", provider: "provider-a", model: "planner", thinkingLevel: "high" };
+	config.executor = { kind: "fixed", provider: "provider-b", model: "executor", thinkingLevel: "low" };
+	config.stepVerifier = { kind: "fixed", provider: "provider-c", model: "step", thinkingLevel: "medium" };
+	config.verifier = { kind: "fixed", provider: "provider-d", model: "verifier", thinkingLevel: "xhigh" };
 	config.fallbackExecutor = {
+		kind: "fixed",
 		provider: "provider-e",
 		model: "repair",
 		thinkingLevel: "medium",
@@ -102,15 +102,66 @@ test("migrates version 1 single-provider configuration without retaining the old
 	);
 
 	const migrated = loadConfig();
-	assert.equal(migrated.configVersion, 2);
-	assert.equal(migrated.planner.provider, "legacy-provider");
-	assert.equal(migrated.planner.model, "plan-model");
-	assert.equal(migrated.executor.provider, "legacy-provider");
-	assert.equal(migrated.executor.model, "code-model");
-	assert.equal(migrated.verifier.provider, "legacy-provider");
+	assert.equal(migrated.configVersion, 4);
+	assert.equal(migrated.planner.kind, "fixed");
+	assert.equal(migrated.executor.kind, "fixed");
+	if (migrated.planner.kind === "fixed") {
+		assert.equal(migrated.planner.provider, "legacy-provider");
+		assert.equal(migrated.planner.model, "plan-model");
+	}
+	if (migrated.executor.kind === "fixed") {
+		assert.equal(migrated.executor.provider, "legacy-provider");
+		assert.equal(migrated.executor.model, "code-model");
+	}
+	assert.equal(migrated.verifier.kind, "pi-default");
 	assert.equal("provider" in migrated, false);
 
 	const persisted = JSON.parse(readFileSync(writeConfig(migrated), "utf8"));
 	assert.equal(persisted.provider, undefined);
-	assert.equal(persisted.configVersion, 2);
+	assert.equal(persisted.configVersion, 4);
+});
+
+test("drops legacy memory configuration instead of retaining a compatibility path", () => {
+	writeFileSync(
+		configPath(),
+		JSON.stringify({
+			configVersion: 2,
+			memory: { enabled: true, autoRecall: true },
+		}),
+	);
+
+	const migrated = loadConfig();
+	assert.equal(migrated.configVersion, 4);
+	assert.equal("memory" in migrated, false);
+	assert.equal("memory" in JSON.parse(readFileSync(writeConfig(migrated), "utf8")), false);
+});
+
+test("normalizes malformed version 4 settings to safe defaults", () => {
+	writeFileSync(
+		configPath(),
+		JSON.stringify({
+			configVersion: 4,
+			planner: { kind: "fixed", provider: "example", model: "", thinkingLevel: "high" },
+			executor: { kind: "fixed", provider: "example", model: "code", thinkingLevel: "invalid" },
+			fallbackExecutor: { kind: "pi-default", afterRepairCycle: -1 },
+			maxRepairCycles: 1.5,
+			autoVerify: "yes",
+			freshSessionPerPhase: 1,
+			allowCurrentModelFallback: null,
+		}),
+	);
+
+	const normalized = loadConfig();
+	assert.equal(normalized.planner.kind, "pi-default");
+	assert.deepEqual(normalized.executor, {
+		kind: "fixed",
+		provider: "example",
+		model: "code",
+		thinkingLevel: "medium",
+	});
+	assert.equal(normalized.fallbackExecutor.afterRepairCycle, 2);
+	assert.equal(normalized.maxRepairCycles, 3);
+	assert.equal(normalized.autoVerify, true);
+	assert.equal(normalized.freshSessionPerPhase, true);
+	assert.equal(normalized.allowCurrentModelFallback, true);
 });

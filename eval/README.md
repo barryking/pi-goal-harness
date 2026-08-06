@@ -15,12 +15,6 @@ repository, and create a private temporary Pi agent directory containing valid
 provider authentication. Install this package into that isolated agent
 directory.
 
-Seed the relevant and adversarial memories:
-
-```text
-node --import tsx eval/seed-window-memory.ts <fixture-repo> <memory-root>
-```
-
 Run the goal:
 
 ```text
@@ -29,8 +23,6 @@ node eval/rpc-goal-runner.mjs \
   --objective "Harden normalizeWindow according to the project validation conventions, add comprehensive tests, and document the behavior. Keep the package dependency-free." \
   --output <result.json> \
   --session-dir <sessions> \
-  --memory on \
-  --memory-root <memory-root> \
   --fresh-sessions on \
   --review-policy final \
   --step-verification executor-evidence \
@@ -49,7 +41,6 @@ node eval/rpc-goal-runner.mjs \
   --source PRD.md \
   --output <source-result.json> \
   --session-dir <source-sessions> \
-  --memory off \
   --fresh-sessions on \
   --review-policy final \
   --extension /absolute/path/to/extensions/goala/index.ts
@@ -82,9 +73,14 @@ Do not commit temporary authentication or raw session evidence.
 
 ## Recorded result
 
-The sanitized summary from the verifier-grounded formation and organic-reuse
-regression is retained in
+The sanitized summary from the historical pre-Dream local-memory experiment is
+retained for provenance in
 [`results/2026-07-25-verifier-grounded-memory.json`](results/2026-07-25-verifier-grounded-memory.json).
 The source-backed PRD regression is retained in
 [`results/2026-07-26-authoritative-source.json`](results/2026-07-26-authoritative-source.json).
 Raw sessions remain ephemeral and are not committed.
+
+Current evaluations do not seed or switch a Goala memory database. To exercise
+the optional integration, install Dream in the isolated Pi home and manage the
+fixture repository through Dream before starting the Goal. Goala will consume
+only Dream's promoted read-only documents.

@@ -8,7 +8,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { buildPhaseContext } from "../extensions/goala/context.ts";
-import type { MemoryConfig } from "../extensions/goala/memory.ts";
 import {
 	MAX_GOAL_SOURCE_BYTES,
 	formatSourceDrift,
@@ -16,15 +15,6 @@ import {
 	parseGoalRequest,
 	resolveGoalSources,
 } from "../extensions/goala/sources.ts";
-
-const memoryConfig: MemoryConfig = {
-	enabled: true,
-	autoRecall: true,
-	maxResults: 4,
-	maxInjectedChars: 1600,
-	maxResultChars: 400,
-	storeColdEvidence: false,
-};
 
 test("parses repeated and quoted source paths without changing ordinary goals", () => {
 	assert.deepEqual(parseGoalRequest("Build the import flow"), {
@@ -105,11 +95,11 @@ test("all active phases receive bounded source references without copied PRD con
 			verification: "Run export tests.",
 			status: "pending" as const,
 		}],
-		recalledMemories: [],
+		memoryContext: { status: "unavailable" as const, references: [] },
 	};
 
 	for (const phase of ["planning", "executing", "verifying", "awaiting-review"]) {
-		const context = buildPhaseContext({ ...baseState, phase }, memoryConfig);
+		const context = buildPhaseContext({ ...baseState, phase });
 		assert.match(context, /AUTHORITATIVE GOAL SOURCES/);
 		assert.match(context, /docs\/PRD\.md/);
 		assert.match(context, /captured sha256 aaaaaaaaaaaa/);

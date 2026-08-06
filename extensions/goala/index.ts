@@ -13,17 +13,17 @@ import {
 	type ReviewPolicy,
 	type ThinkingLevel,
 } from "./config.ts";
+import { clampThinkingLevel } from "./model-capabilities.ts";
 import { buildPhaseContext } from "./context.ts";
 import {
-	memoryHealth,
-	newGoalId,
-	recentMemories,
-	repositoryIdentity,
-	searchMemories,
-	setMemoryStatus,
-} from "./memory.ts";
+	DreamMemoryClient,
+	formatGoalMemoryStatus,
+	type GoalMemoryContext,
+	type GoalMemoryAuthority,
+} from "./dream.ts";
 import {
 	displayPlan,
+	displayGoalContext,
 	displayStatus,
 	formatPlanForReview,
 	formatState,
@@ -58,6 +58,7 @@ import {
 import {
 	emptyState,
 	GOAL_STATE_ENTRY,
+	newGoalId,
 	normalizeState,
 	type GoalState,
 } from "./workflow.ts";
@@ -71,6 +72,7 @@ export { formatPlanForReview } from "./presenters.ts";
 export default function goala(pi: ExtensionAPI): void {
 	let config = loadConfig();
 	let state = emptyState();
+	const dream = new DreamMemoryClient();
 	let pendingAction: PendingAction | undefined;
 	let sessionDefaultModel:
 		| { provider: string; id: string; thinkingLevel?: ThinkingLevel }
@@ -131,25 +133,43 @@ export default function goala(pi: ExtensionAPI): void {
 			state.phase,
 			state.repairCycles,
 		);
-		let model = ctx.modelRegistry.find(profile.provider, profile.model);
-		if (!model && config.allowCurrentModelFallback) {
-			const fallback = sessionDefaultModel ?? (ctx.model
-				? { provider: ctx.model.provider, id: ctx.model.id }
-				: undefined);
-			if (fallback) {
-				model = ctx.modelRegistry.find(fallback.provider, fallback.id);
-				if (model && !fallbackNoticeShown) {
-					ctx.ui.notify(
-						`Goala: ${profile.provider}/${profile.model} is unavailable; using ${fallback.provider}/${fallback.id}. Run /goala-setup to configure model roles.`,
-						"warning",
-					);
-					fallbackNoticeShown = true;
-				}
+		const piDefault = sessionDefaultModel ?? (ctx.model
+			? {
+				provider: ctx.model.provider,
+				id: ctx.model.id,
+				thinkingLevel: ctx.thinkingLevel as ThinkingLevel | undefined,
+			}
+			: undefined);
+		let requestedThinking = piDefault?.thinkingLevel ?? "off";
+		let model = profile.kind === "fixed"
+			? ctx.modelRegistry.find(profile.provider, profile.model)
+			: piDefault
+				? ctx.modelRegistry.find(piDefault.provider, piDefault.id)
+				: undefined;
+		if (profile.kind === "fixed" && model) {
+			requestedThinking = profile.thinkingLevel;
+		}
+		if (
+			profile.kind === "fixed" &&
+			!model &&
+			config.allowCurrentModelFallback &&
+			piDefault
+		) {
+			model = ctx.modelRegistry.find(piDefault.provider, piDefault.id);
+			if (model && !fallbackNoticeShown) {
+				ctx.ui.notify(
+					`Goala: ${profile.provider}/${profile.model} is unavailable; using Pi's default ${piDefault.provider}/${piDefault.id}. Run /goala-setup to configure model roles.`,
+					"warning",
+				);
+				fallbackNoticeShown = true;
 			}
 		}
 		if (!model) {
+			const unavailable = profile.kind === "fixed"
+				? `${profile.provider}/${profile.model}`
+				: "Pi's default model";
 			ctx.ui.notify(
-				`Goala: model not found: ${profile.provider}/${profile.model}. Run /goala-setup current or edit the namespaced config.`,
+				`Goala: model not found: ${unavailable}. Run /goala-setup or edit the namespaced config.`,
 				"error",
 			);
 			updateGoalUi(ctx, state);
@@ -159,13 +179,13 @@ export default function goala(pi: ExtensionAPI): void {
 		const selected = await pi.setModel(model);
 		if (!selected) {
 			ctx.ui.notify(
-				`Goala: authenticate ${profile.provider} before using ${profile.model}`,
+				`Goala: authenticate ${model.provider} before using ${model.id}`,
 				"warning",
 			);
 			updateGoalUi(ctx, state);
 			return false;
 		}
-		pi.setThinkingLevel(profile.thinkingLevel);
+		pi.setThinkingLevel(clampThinkingLevel(model, requestedThinking));
 		updateGoalUi(ctx, state);
 		return true;
 	}
@@ -212,8 +232,7 @@ Record completed steps with goal_progress. When implementation checks pass, subm
 
 	function verificationPrompt(): string {
 		return `[GOALA PHASE:VERIFYING]
-Independently verify the actual result against every acceptance criterion, then submit_verification with concrete evidence.
-Include only distilled decisions, discoveries, or pitfalls that you personally confirmed from current files or checks in findings. Use an empty findings array when nothing is likely to help a later related task.`;
+Independently verify the actual result against every acceptance criterion, then submit_verification with concrete evidence.`;
 	}
 
 	function stepVerificationPrompt(): string {
@@ -228,11 +247,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 		sources: GoalSource[],
 		ctx: ExtensionContext,
 	): Promise<void> {
-		const repo = repositoryIdentity(ctx.cwd);
-		const recalledMemories =
-			config.memory.enabled && config.memory.autoRecall
-				? searchMemories(objective, ctx.cwd, config.memory)
-				: [];
+		const memoryContext = await selectGoalMemory(objective, ctx);
 		state = {
 			...emptyState(config.reviewPolicy),
 			goalId: newGoalId(),
@@ -240,8 +255,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 			sources,
 			phase: "planning",
 			startedAt: now(),
-			startCommit: repo.commit,
-			recalledMemories,
+			memoryContext,
 		};
 		pendingAction = undefined;
 		pi.setSessionName(`Goal: ${truncate(objective, 56)}`);
@@ -250,6 +264,81 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 		if (await moveToFreshSession(ctx, config, state, kickoff, "plan")) return;
 		await applyPhase(ctx);
 		pi.sendUserMessage(kickoff);
+	}
+
+	async function selectGoalMemory(
+		objective: string,
+		ctx: ExtensionContext,
+	): Promise<GoalMemoryContext> {
+		const discovery = await dream.discover(ctx.cwd, objective);
+		if (discovery.status !== "available") {
+			if (discovery.status === "error") {
+				ctx.ui.notify(discovery.message ?? "Dream memory is unavailable.", "warning");
+			}
+			return {
+				status: discovery.status,
+				repositoryIdentity: discovery.repositoryIdentity,
+				references: [],
+				message: discovery.message,
+			};
+		}
+		if (discovery.hits.length === 0) {
+			return {
+				status: "available",
+				repositoryIdentity: discovery.repositoryIdentity,
+				references: [],
+				message: "Dream found no promoted documents relevant to this Goal.",
+			};
+		}
+
+		let selected: Array<{
+			hit: (typeof discovery.hits)[number];
+			authority: GoalMemoryAuthority;
+		}> = [];
+		if (!ctx.hasUI) {
+			selected = discovery.hits.slice(0, 4).map((hit) => ({ hit, authority: "advisory" }));
+		} else {
+			const useAll = "Use all as advisory";
+			const review = "Review individually";
+			const skip = "Use none";
+			const choice = await ctx.ui.select(
+				`Dream found ${discovery.hits.length} relevant promoted document(s) for this Goal.`,
+				[useAll, review, skip],
+			);
+			if (choice === useAll) {
+				selected = discovery.hits.map((hit) => ({ hit, authority: "advisory" }));
+			} else if (choice === review) {
+				for (const hit of discovery.hits) {
+					const authority = await ctx.ui.select(
+						`${hit.storeName}/${hit.path}\n${truncate(hit.excerpt, 240)}`,
+						["Advisory", "Binding", "Skip"],
+					);
+					if (authority === "Advisory" || authority === "Binding") {
+						selected.push({ hit, authority: authority.toLowerCase() as GoalMemoryAuthority });
+					}
+				}
+			}
+		}
+
+		if (selected.length === 0) {
+			return {
+				status: "available",
+				repositoryIdentity: discovery.repositoryIdentity,
+				references: [],
+				message: "No Dream documents were selected for this Goal.",
+			};
+		}
+
+		const captured = await dream.capture(selected);
+		if (captured.warnings.length > 0) {
+			ctx.ui.notify(captured.warnings.join("\n"), "warning");
+		}
+		return {
+			status: "available",
+			repositoryIdentity: discovery.repositoryIdentity,
+			references: captured.references,
+			message: captured.warnings.length > 0 ? captured.warnings.join(" ") : undefined,
+		};
 	}
 
 	function requestedGoal(input: string, ctx: ExtensionContext): {
@@ -420,12 +509,16 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 
 	pi.registerCommand("goal", {
 		description: "Start or manage a persistent goal; use --source <path> -- <objective> for authoritative documents",
-		handler: async (args, ctx) => {
+			handler: async (args, ctx) => {
 			const input = args.trim();
 			const command = input.toLowerCase();
 
 			if (!input || command === "status") {
 				displayStatus(pi, await statusForSession(ctx));
+				return;
+			}
+			if (command === "context") {
+				displayGoalContext(pi, formatGoalMemoryStatus(state.memoryContext));
 				return;
 			}
 			if (command === "approve") {
@@ -578,14 +671,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 				);
 				return;
 			}
-			const current = ctx.model
-				? { provider: ctx.model.provider, id: ctx.model.id }
-				: sessionDefaultModel;
-			proposed = preset.create(current);
-			if (!proposed) {
-				ctx.ui.notify(`Preset "${preset.label}" requires a current model.`, "warning");
-				return;
-			}
+			proposed = preset.create();
 		}
 		const missing = configuredModels(proposed).filter(
 			(model) => !ctx.modelRegistry.find(model.provider, model.id),
@@ -608,61 +694,6 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 	pi.registerCommand("goala-setup", {
 		description: `Configure model roles: /goala-setup [status | custom | ${GOALA_SETUP_PRESETS.map((preset) => preset.id).join(" | ")}]`,
 		handler: configureGoala,
-	});
-
-	pi.registerCommand("memory-status", {
-		description: "Show memory health and recent active episodes",
-		handler: async (_args, ctx) => {
-			if (!config.memory.enabled) {
-				ctx.ui.notify("Goala memory is disabled in the namespaced configuration.", "info");
-				return;
-			}
-			const memories = recentMemories(ctx.cwd, 20, true);
-			const health = memoryHealth();
-			const lines = memories.map(
-				(memory) =>
-					`${memory.id} · ${memory.status ?? "verified"} · ${memory.learnings.length} findings · ${truncate(memory.intent, 52)} · ${memory.repoKey} · ${memory.provenance ?? "unknown"} · ${memory.verifiedAt.slice(0, 10)}`,
-			);
-			ctx.ui.notify(
-				[
-					`Memory: ${health.ok ? "healthy" : "attention needed"} · ${health.verified} active · ${health.retired} retired`,
-					`Database: ${health.database}`,
-					health.lastError ? `Last error: ${health.lastError}` : "",
-					lines.length > 0
-						? `Recent episodes:\n${lines.join("\n")}`
-						: "No verified or retired episodes are stored.",
-				].filter(Boolean).join("\n"),
-				health.ok ? "info" : "warning",
-			);
-		},
-	});
-
-	pi.registerCommand("memory", {
-		description: "Retire or restore a durable memory episode",
-		handler: async (args, ctx) => {
-			if (!config.memory.enabled) {
-				ctx.ui.notify("Goala memory is disabled in the namespaced configuration.", "info");
-				return;
-			}
-			const [action, id, ...extra] = args.trim().split(/\s+/);
-			if (
-				extra.length > 0 ||
-				(action !== "retire" && action !== "restore") ||
-				!id
-			) {
-				ctx.ui.notify("Usage: /memory retire <memory-id> or /memory restore <memory-id>", "warning");
-				return;
-			}
-			const status = action === "retire" ? "retired" : "verified";
-			if (!setMemoryStatus(id, status)) {
-				ctx.ui.notify(`Memory ${id} was not found or could not be updated. Run /memory-status for diagnostics.`, "warning");
-				return;
-			}
-			ctx.ui.notify(
-				`Memory ${id} is now ${status}. ${status === "retired" ? "It will no longer be recalled." : "It can be recalled again."}`,
-				"info",
-			);
-		},
 	});
 
 	pi.registerCommand("plan", {
@@ -767,7 +798,7 @@ Do not edit files or rely on executor claims. Finish with submit_step_verificati
 Resolve uncertainty by inspecting the repository. State material assumptions and risks.
 Read every authoritative goal source in the phase context and cover its requirements in the acceptance criteria and plan.
 Make plan steps meaningful, independently reviewable milestones; do not create micro-steps or a separate step whose only purpose is final regression checking.
-Use recalled memory only as leads; confirm it against current files. Use memory_search for targeted history.
+Treat advisory remembered guidance only as leads and confirm it against current files. Cover every binding document in the acceptance criteria and plan.
 Your final action must be submit_plan with a structured, testable plan.`;
 				break;
 			case "awaiting-execution":
@@ -779,11 +810,11 @@ Your final action must be submit_plan with a structured, testable plan.`;
 					? `You are the EXECUTOR. Implement only the first unapproved plan step shown in the phase context, or report a real blocker.
 Read the current authoritative goal sources before implementation and preserve their acceptance contract.
 Do not begin later steps. Use goal_progress complete_step with concrete evidence when this step's checks pass.
-Use memory_search only when prior work is relevant.`
+Apply binding remembered guidance and confirm advisory guidance against current files.`
 					: `You are the EXECUTOR. Continue until the approved plan is implemented or a real blocker requires user input.
 Read the current authoritative goal sources before implementation and preserve their acceptance contract.
 Use goal_progress to record evidence for completed steps. Do not self-certify the goal.
-Use memory_search only when prior work is relevant.
+Apply binding remembered guidance and confirm advisory guidance against current files.
 After all implementation work and checks are complete, submit ready_for_verification.`;
 				break;
 			case "verifying-step":
@@ -802,7 +833,7 @@ Do not edit or advance the plan. The user can run /goal approve, /goal revise <f
 Read every authoritative goal source and independently verify the result against its current requirements as well as the structured acceptance criteria.
 Do not edit files. Inspect actual changes and run relevant validation.
 Your final action must be submit_verification. PASS requires concrete passing evidence for every acceptance criterion.
-The findings field is the only learning path into durable episodic memory. Include only concise future-useful decisions, discoveries, or pitfalls that your own inspection confirmed, with evidence and an optional source path. Do not restate the goal or generic success. Return an empty findings array when there is no durable lesson.`;
+Independently check every binding remembered-guidance document shown in the phase context.`;
 				break;
 			case "paused":
 				phaseInstructions = "The goal is paused. Preserve it but do not advance it unless the user explicitly resumes.";
@@ -821,7 +852,7 @@ The findings field is the only learning path into durable episodic memory. Inclu
 ## Goala
 ${phaseInstructions}
 
-${buildPhaseContext(state, config.memory)}
+${buildPhaseContext(state)}
 
 ${sourceDrift}`.trim(),
 		};

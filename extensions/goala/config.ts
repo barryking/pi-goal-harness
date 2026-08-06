@@ -6,16 +6,31 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { MemoryConfig } from "./memory.ts";
 
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+export const THINKING_LEVELS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export type ReviewPolicy = "final" | "per-step";
 
-export interface ModelProfile {
+export interface PiDefaultModelProfile {
+	kind: "pi-default";
+}
+
+export interface FixedModelProfile {
+	kind: "fixed";
 	provider: string;
 	model: string;
 	thinkingLevel: ThinkingLevel;
 }
+
+export type ModelProfile = PiDefaultModelProfile | FixedModelProfile;
 
 export interface ModelIdentity {
 	provider: string;
@@ -25,11 +40,11 @@ export interface ModelIdentity {
 export interface GoalaSetupPreset {
 	id: string;
 	label: string;
-	create(currentModel?: ModelIdentity): GoalaConfig | undefined;
+	create(): GoalaConfig;
 }
 
 export interface GoalaConfig {
-	configVersion: 2;
+	configVersion: 4;
 	planner: ModelProfile;
 	executor: ModelProfile;
 	fallbackExecutor: ModelProfile & { afterRepairCycle: number };
@@ -40,50 +55,22 @@ export interface GoalaConfig {
 	maxRepairCycles: number;
 	freshSessionPerPhase: boolean;
 	allowCurrentModelFallback: boolean;
-	memory: MemoryConfig;
 }
 
-export const OPENAI_CODEX_PRESET: GoalaConfig = {
-	configVersion: 2,
-	planner: {
-		provider: "openai-codex",
-		model: "gpt-5.6-sol",
-		thinkingLevel: "medium",
-	},
-	executor: {
-		provider: "openai-codex",
-		model: "gpt-5.6-luna",
-		thinkingLevel: "medium",
-	},
-	fallbackExecutor: {
-		provider: "openai-codex",
-		model: "gpt-5.6-terra",
-		thinkingLevel: "medium",
-		afterRepairCycle: 2,
-	},
-	stepVerifier: {
-		provider: "openai-codex",
-		model: "gpt-5.6-luna",
-		thinkingLevel: "medium",
-	},
-	verifier: {
-		provider: "openai-codex",
-		model: "gpt-5.6-sol",
-		thinkingLevel: "medium",
-	},
+const PI_DEFAULT_PROFILE: PiDefaultModelProfile = { kind: "pi-default" };
+
+export const PI_DEFAULT_CONFIG: GoalaConfig = {
+	configVersion: 4,
+	planner: { ...PI_DEFAULT_PROFILE },
+	executor: { ...PI_DEFAULT_PROFILE },
+	fallbackExecutor: { ...PI_DEFAULT_PROFILE, afterRepairCycle: 2 },
+	stepVerifier: { ...PI_DEFAULT_PROFILE },
+	verifier: { ...PI_DEFAULT_PROFILE },
 	reviewPolicy: "final",
 	autoVerify: true,
 	maxRepairCycles: 3,
 	freshSessionPerPhase: true,
 	allowCurrentModelFallback: true,
-	memory: {
-		enabled: true,
-		autoRecall: true,
-		maxResults: 4,
-		maxInjectedChars: 6000,
-		maxResultChars: 900,
-		storeColdEvidence: false,
-	},
 };
 
 export function goalaHome(): string {
@@ -94,75 +81,92 @@ export function configPath(): string {
 	return join(goalaHome(), "config.json");
 }
 
-type PersistedConfig = Partial<GoalaConfig> & {
+type PersistedConfig = Record<string, unknown> & {
 	provider?: unknown;
+	memory?: unknown;
 };
 
-function profileProvider(
-	profile: Partial<ModelProfile> | undefined,
-	legacyProvider: unknown,
-	fallback: ModelProfile,
-): string {
-	if (typeof profile?.provider === "string" && profile.provider) return profile.provider;
-	if (typeof legacyProvider === "string" && legacyProvider) return legacyProvider;
-	return fallback.provider;
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function mergeProfile(
-	profile: Partial<ModelProfile> | undefined,
+function isThinkingLevel(value: unknown): value is ThinkingLevel {
+	return (THINKING_LEVELS as readonly unknown[]).includes(value);
+}
+
+function normalizeProfile(
+	value: unknown,
 	legacyProvider: unknown,
-	fallback: ModelProfile,
 ): ModelProfile {
+	if (!isRecord(value)) return { ...PI_DEFAULT_PROFILE };
+	if (value.kind === "pi-default") return { ...PI_DEFAULT_PROFILE };
+
+	const provider = typeof value.provider === "string" && value.provider
+		? value.provider
+		: typeof legacyProvider === "string" && legacyProvider
+			? legacyProvider
+			: undefined;
+	const model = typeof value.model === "string" && value.model
+		? value.model
+		: undefined;
+	if (!provider || !model) return { ...PI_DEFAULT_PROFILE };
+
 	return {
-		...fallback,
-		...profile,
-		provider: profileProvider(profile, legacyProvider, fallback),
+		kind: "fixed",
+		provider,
+		model,
+		thinkingLevel: isThinkingLevel(value.thinkingLevel)
+			? value.thinkingLevel
+			: "medium",
 	};
 }
 
+function booleanSetting(value: unknown, fallback: boolean): boolean {
+	return typeof value === "boolean" ? value : fallback;
+}
+
+function positiveInteger(value: unknown, fallback: number): number {
+	return typeof value === "number" && Number.isInteger(value) && value > 0
+		? value
+		: fallback;
+}
+
 function mergeConfig(parsed: PersistedConfig): GoalaConfig {
-	const { provider: legacyProvider, ...current } = parsed;
+	const fallbackValue = isRecord(parsed.fallbackExecutor)
+		? parsed.fallbackExecutor
+		: undefined;
 	return {
-		...OPENAI_CODEX_PRESET,
-		...current,
-		configVersion: 2,
-		reviewPolicy: parsed.reviewPolicy === "per-step" ? "per-step" : "final",
-		planner: mergeProfile(
-			parsed.planner,
-			legacyProvider,
-			OPENAI_CODEX_PRESET.planner,
-		),
-		executor: mergeProfile(
-			parsed.executor,
-			legacyProvider,
-			OPENAI_CODEX_PRESET.executor,
-		),
+		configVersion: 4,
+		planner: normalizeProfile(parsed.planner, parsed.provider),
+		executor: normalizeProfile(parsed.executor, parsed.provider),
 		fallbackExecutor: {
-			...mergeProfile(
-				parsed.fallbackExecutor,
-				legacyProvider,
-				OPENAI_CODEX_PRESET.fallbackExecutor,
+			...normalizeProfile(parsed.fallbackExecutor, parsed.provider),
+			afterRepairCycle: positiveInteger(
+				fallbackValue?.afterRepairCycle,
+				PI_DEFAULT_CONFIG.fallbackExecutor.afterRepairCycle,
 			),
-			afterRepairCycle:
-				parsed.fallbackExecutor?.afterRepairCycle ??
-				OPENAI_CODEX_PRESET.fallbackExecutor.afterRepairCycle,
 		},
-		stepVerifier: mergeProfile(
-			parsed.stepVerifier,
-			legacyProvider,
-			OPENAI_CODEX_PRESET.stepVerifier,
+		stepVerifier: normalizeProfile(parsed.stepVerifier, parsed.provider),
+		verifier: normalizeProfile(parsed.verifier, parsed.provider),
+		reviewPolicy: parsed.reviewPolicy === "per-step" ? "per-step" : "final",
+		autoVerify: booleanSetting(parsed.autoVerify, PI_DEFAULT_CONFIG.autoVerify),
+		maxRepairCycles: positiveInteger(
+			parsed.maxRepairCycles,
+			PI_DEFAULT_CONFIG.maxRepairCycles,
 		),
-		verifier: mergeProfile(
-			parsed.verifier,
-			legacyProvider,
-			OPENAI_CODEX_PRESET.verifier,
+		freshSessionPerPhase: booleanSetting(
+			parsed.freshSessionPerPhase,
+			PI_DEFAULT_CONFIG.freshSessionPerPhase,
 		),
-		memory: { ...OPENAI_CODEX_PRESET.memory, ...parsed.memory },
+		allowCurrentModelFallback: booleanSetting(
+			parsed.allowCurrentModelFallback,
+			PI_DEFAULT_CONFIG.allowCurrentModelFallback,
+		),
 	};
 }
 
 export function loadConfig(): GoalaConfig {
-	let config = OPENAI_CODEX_PRESET;
+	let config: GoalaConfig;
 	try {
 		const parsed = JSON.parse(readFileSync(configPath(), "utf8")) as PersistedConfig;
 		config = mergeConfig(parsed);
@@ -170,9 +174,6 @@ export function loadConfig(): GoalaConfig {
 		config = mergeConfig({});
 	}
 
-	const memoryEnabled = process.env.PI_GOALA_MEMORY_ENABLED;
-	if (memoryEnabled === "0") config.memory.enabled = false;
-	if (memoryEnabled === "1") config.memory.enabled = true;
 	const freshSessions = process.env.PI_GOALA_FRESH_SESSIONS;
 	if (freshSessions === "0") config.freshSessionPerPhase = false;
 	if (freshSessions === "1") config.freshSessionPerPhase = true;
@@ -191,18 +192,27 @@ export function writeConfig(config: GoalaConfig): string {
 	return target;
 }
 
-export function currentModelConfig(
+export function fixedModelConfig(
 	provider: string,
 	model: string,
 	thinkingLevel: ThinkingLevel = "medium",
 ): GoalaConfig {
+	const profile: FixedModelProfile = {
+		kind: "fixed",
+		provider,
+		model,
+		thinkingLevel,
+	};
 	return {
-		...OPENAI_CODEX_PRESET,
-		planner: { provider, model, thinkingLevel },
-		executor: { provider, model, thinkingLevel },
-		fallbackExecutor: { provider, model, thinkingLevel, afterRepairCycle: 2 },
-		stepVerifier: { provider, model, thinkingLevel },
-		verifier: { provider, model, thinkingLevel },
+		...structuredClone(PI_DEFAULT_CONFIG),
+		planner: { ...profile },
+		executor: { ...profile },
+		fallbackExecutor: {
+			...profile,
+			afterRepairCycle: PI_DEFAULT_CONFIG.fallbackExecutor.afterRepairCycle,
+		},
+		stepVerifier: { ...profile },
+		verifier: { ...profile },
 	};
 }
 
@@ -212,17 +222,9 @@ function cloneConfig(config: GoalaConfig): GoalaConfig {
 
 export const GOALA_SETUP_PRESETS: readonly GoalaSetupPreset[] = [
 	{
-		id: "openai",
-		label: "Recommended OpenAI Codex preset",
-		create: () => cloneConfig(OPENAI_CODEX_PRESET),
-	},
-	{
-		id: "current",
-		label: "Use the current model for every role",
-		create: (currentModel) =>
-			currentModel
-				? currentModelConfig(currentModel.provider, currentModel.id)
-				: undefined,
+		id: "default",
+		label: "Use Pi's default model for every role",
+		create: () => cloneConfig(PI_DEFAULT_CONFIG),
 	},
 ];
 
@@ -233,7 +235,11 @@ export function configuredModels(config: GoalaConfig): ModelIdentity[] {
 		config.fallbackExecutor,
 		config.stepVerifier,
 		config.verifier,
-	].map((profile) => ({ provider: profile.provider, id: profile.model }));
+	].flatMap((profile) =>
+		profile.kind === "fixed"
+			? [{ provider: profile.provider, id: profile.model }]
+			: [],
+	);
 	return identities.filter(
 		(identity, index) =>
 			identities.findIndex(
@@ -253,11 +259,13 @@ export function formatConfig(config: GoalaConfig): string {
 		`Fallback executor: ${formatProfile(config.fallbackExecutor)}`,
 		`Fallback executor activates after: ${config.fallbackExecutor.afterRepairCycle} failed verification attempts`,
 		`Review policy: ${config.reviewPolicy}`,
-		`Memory: ${config.memory.enabled ? "enabled" : "disabled"}; auto-recall ${config.memory.autoRecall ? "on" : "off"}`,
-		`Unavailable-model fallback to current Pi model: ${config.allowCurrentModelFallback ? "allowed" : "disabled"}`,
+		`Unavailable fixed-model fallback to Pi default: ${config.allowCurrentModelFallback ? "allowed" : "disabled"}`,
 	].join("\n");
 }
 
 function formatProfile(profile: ModelProfile): string {
+	if (profile.kind === "pi-default") {
+		return "Pi default model · Pi reasoning setting (limited by model support)";
+	}
 	return `${profile.provider}/${profile.model} · ${profile.thinkingLevel} reasoning`;
 }

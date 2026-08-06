@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-	OPENAI_CODEX_PRESET,
+	fixedModelConfig,
+	PI_DEFAULT_CONFIG,
 	writeConfig,
+	type FixedModelProfile,
 	type GoalaConfig,
 	type ModelProfile,
 } from "../extensions/goala/config.ts";
@@ -20,13 +22,13 @@ import {
 function profile(
 	provider: string,
 	model: string,
-	thinkingLevel: ModelProfile["thinkingLevel"],
-): ModelProfile {
-	return { provider, model, thinkingLevel };
+	thinkingLevel: FixedModelProfile["thinkingLevel"],
+): FixedModelProfile {
+	return { kind: "fixed", provider, model, thinkingLevel };
 }
 
 const config: GoalaConfig = {
-	...structuredClone(OPENAI_CODEX_PRESET),
+	...fixedModelConfig("unused", "unused"),
 	planner: profile("planning-provider", "planning-model", "high"),
 	executor: profile("execution-provider", "execution-model", "low"),
 	stepVerifier: profile("step-provider", "step-model", "medium"),
@@ -122,6 +124,10 @@ test("the extension applies each routed model and reasoning level to Pi", async 
 				"verifying",
 			].includes(candidate.phase),
 	)) {
+		assert.equal(routingCase.expected.kind, "fixed");
+		if (routingCase.expected.kind !== "fixed") {
+			throw new Error(`${routingCase.name} did not route to a fixed profile`);
+		}
 		process.env.PI_GOALA_HOME = mkdtempSync(
 			join(tmpdir(), "pi-goala-routing-"),
 		);
@@ -152,7 +158,7 @@ test("the extension applies each routed model and reasoning level to Pi", async 
 				),
 			setActiveTools() {},
 			async setModel(model: { provider: string; id: string }) {
-				selectedModel = model;
+				selectedModel = { provider: model.provider, id: model.id };
 				return true;
 			},
 			setThinkingLevel(level: string) {
@@ -180,7 +186,12 @@ test("the extension applies each routed model and reasoning level to Pi", async 
 			thinkingLevel: "off",
 			modelRegistry: {
 				find(provider: string, id: string) {
-					return { provider, id };
+					return {
+						provider,
+						id,
+						reasoning: true,
+						thinkingLevelMap: { xhigh: "xhigh" },
+					};
 				},
 			},
 			sessionManager: {
@@ -217,4 +228,77 @@ test("the extension applies each routed model and reasoning level to Pi", async 
 			routingCase.name,
 		);
 	}
+});
+
+test("the default profile follows Pi's session model and clamps its reasoning", async () => {
+	process.env.PI_GOALA_HOME = mkdtempSync(join(tmpdir(), "pi-goala-default-routing-"));
+	writeConfig(PI_DEFAULT_CONFIG);
+
+	const handlers = new Map<string, Array<(event: unknown, ctx: any) => unknown>>();
+	let selectedModel: { provider: string; id: string } | undefined;
+	let selectedThinking: string | undefined;
+	const pi = {
+		on(name: string, handler: (event: unknown, ctx: any) => unknown) {
+			const registered = handlers.get(name) ?? [];
+			registered.push(handler);
+			handlers.set(name, registered);
+		},
+		registerTool() {},
+		registerCommand() {},
+		registerEntryRenderer() {},
+		getActiveTools: () => ["read"],
+		getAllTools: () => [{ name: "read" }],
+		setActiveTools() {},
+		async setModel(model: { provider: string; id: string }) {
+			selectedModel = { provider: model.provider, id: model.id };
+			return true;
+		},
+		setThinkingLevel(level: string) {
+			selectedThinking = level;
+		},
+		appendEntry() {},
+		setSessionName() {},
+		sendUserMessage() {},
+		sendMessage() {},
+	};
+	goala(pi as never);
+
+	const state = {
+		...emptyState(),
+		goalId: "default-routing-goal",
+		objective: "Use Pi defaults",
+		phase: "planning" as const,
+	};
+	const ctx = {
+		mode: "print",
+		hasUI: false,
+		cwd: process.cwd(),
+		model: { provider: "local-provider", id: "plain-model" },
+		thinkingLevel: "high",
+		modelRegistry: {
+			find(provider: string, id: string) {
+				return { provider, id, reasoning: false };
+			},
+		},
+		sessionManager: {
+			getBranch: () => [{
+				type: "custom",
+				customType: GOAL_STATE_ENTRY,
+				data: state,
+			}],
+			getSessionFile: () => undefined,
+		},
+		ui: { setStatus() {}, setWidget() {}, notify() {} },
+		isIdle: () => true,
+	};
+
+	for (const handler of handlers.get("session_start") ?? []) {
+		await handler({}, ctx);
+	}
+
+	assert.deepEqual(selectedModel, {
+		provider: "local-provider",
+		id: "plain-model",
+	});
+	assert.equal(selectedThinking, "off");
 });
