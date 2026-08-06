@@ -1,7 +1,7 @@
 {
   "name": "pi-goala",
-  "version": "0.3.3",
-  "description": "Goal-oriented agent lifecycle, evidence, and verified memory for Pi.",
+  "version": "0.4.0",
+  "description": "Goal-oriented planning, execution, repair, and independent verification for Pi.",
   "type": "module",
   "author": "Barry King",
   "license": "MIT",
@@ -18,7 +18,7 @@
     "pi-extension",
     "coding-agent",
     "plan-execute-verify",
-    "agent-memory",
+    "dream-integration",
     "coala"
   ],
   "engines": {
@@ -40,14 +40,21 @@
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.82.1",
-    "@earendil-works/pi-tui": ">=0.82.1",
+    "@earendil-works/pi-coding-agent": ">=0.83.0",
+    "@earendil-works/pi-tui": ">=0.83.0",
+    "pi-dream": ">=0.3.0",
     "typebox": "*"
   },
+  "peerDependenciesMeta": {
+    "pi-dream": {
+      "optional": true
+    }
+  },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.82.1",
-    "@earendil-works/pi-tui": "0.82.1",
+    "@earendil-works/pi-coding-agent": "0.83.0",
+    "@earendil-works/pi-tui": "0.83.0",
     "@types/node": "^24.0.0",
+    "pi-dream": "0.3.0",
     "tsx": "^4.20.0",
     "typebox": "^1.1.38",
     "typescript": "^5.9.0"

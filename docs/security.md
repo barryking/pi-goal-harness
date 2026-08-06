@@ -34,18 +34,20 @@ editing the file. Do not register a document that the implementation is
 expected to rewrite; intentionally revised contracts should be approved through
 a replacement goal.
 
-## Memory
+## Dream guidance
 
-- Durable episodes are written only after verifier PASS, and reusable findings
-  come from that verifier's own evidence.
-- Recall is treated as untrusted data.
-- Common secret formats are redacted.
-- Storage is namespaced and user-readable only.
-- Raw evidence is not automatically injected; full transcript retention is
-  disabled by default.
+- The Dream dependency is optional and dynamically loaded through its public
+  read-only interop entry point.
+- Only the current repository and its Primary shared-memory Store are searched.
+- Selected documents are pinned by Store commit, path, and SHA-256 hash.
+- Goal state accepts at most eight documents and 64,000 total characters.
+- Advisory guidance is treated as untrusted evidence; only explicitly selected
+  binding guidance reaches independent verification.
+- Dream document content is model-visible. Promote only material appropriate
+  for later agent use.
 
-Secret scanning is pattern based and cannot guarantee removal of arbitrary
-credentials embedded in prose.
+Goala does not redact Dream content, write Dream data, or keep a second memory
+database. Dream remains responsible for Store safety and promotion review.
 
 ## User approval
 

@@ -1,27 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildPhaseContext } from "../extensions/goala/context.ts";
-import type { MemoryConfig } from "../extensions/goala/memory.ts";
-
-const memoryConfig: MemoryConfig = {
-	enabled: true,
-	autoRecall: true,
-	maxResults: 4,
-	maxInjectedChars: 1600,
-	maxResultChars: 400,
-	storeColdEvidence: true,
-};
 
 const memory = {
-	id: "mem-verified",
-	repoKey: "local:fixture",
-	objective: "Previous objective",
-	intent: "Use strict parsing",
-	outcome: "Hidden checks passed",
-	learnings: ["Range is 1..3600"],
-	openItems: [],
-	files: ["src/window.js"],
-	verifiedAt: "2026-07-25T00:00:00.000Z",
+	storeId: "store-1",
+	storeName: "fixture",
+	storeScope: "repository" as const,
+	commit: "b".repeat(40),
+	path: "rules/window.md",
+	sha256: "a".repeat(64),
+	authority: "advisory" as const,
+	excerpt: "Range is 1..3600",
+	content: "Use strict parsing. The supported range is 1..3600.",
 };
 
 const plan = Array.from({ length: 8 }, (_, index) => ({
@@ -33,39 +23,39 @@ const plan = Array.from({ length: 8 }, (_, index) => ({
 	evidence: `Completed evidence ${index + 1}`,
 }));
 
-test("execution receives remaining work and bounded memory, not completed evidence", () => {
+test("execution receives remaining work and selected guidance, not completed evidence", () => {
 	const packet = buildPhaseContext(
 		{
 			objective: "Harden window parsing",
 			acceptanceCriteria: ["Public and hidden checks pass"],
 			phase: "executing",
 			plan,
-			recalledMemories: [memory],
+			memoryContext: { status: "available", references: [memory] },
 		},
-		memoryConfig,
 	);
 
 	assert.ok(packet.includes("Step 6"));
 	assert.ok(!packet.includes("Step 1\n"));
 	assert.ok(!packet.includes("Completed evidence"));
-	assert.ok(packet.includes(memory.id));
+	assert.ok(packet.includes(memory.path));
+	assert.ok(packet.includes(memory.content));
 });
 
-test("verification receives criteria and a trust boundary, never recalled memory", () => {
+test("verification receives binding guidance but excludes advisory guidance", () => {
+	const binding = { ...memory, path: "rules/binding.md", authority: "binding" as const };
 	const packet = buildPhaseContext(
 		{
 			objective: "Harden window parsing",
 			acceptanceCriteria: ["Public and hidden checks pass"],
 			phase: "verifying",
 			plan,
-			recalledMemories: [memory],
+			memoryContext: { status: "available", references: [memory, binding] },
 		},
-		memoryConfig,
 	);
 
 	assert.ok(packet.includes("Public and hidden checks pass"));
 	assert.ok(packet.includes("TRUST BOUNDARY"));
-	assert.ok(!packet.includes(memory.id));
-	assert.ok(!packet.includes(memory.outcome));
+	assert.ok(!packet.includes(memory.path));
+	assert.ok(packet.includes(binding.path));
 	assert.ok(!packet.includes("Completed evidence"));
 });

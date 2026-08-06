@@ -16,8 +16,13 @@ interface StatusViewEntry {
 	content: string;
 }
 
+interface ContextViewEntry {
+	content: string;
+}
+
 export const PLAN_VIEW_ENTRY = "goala-plan";
 export const STATUS_VIEW_ENTRY = "goala-status";
+export const CONTEXT_VIEW_ENTRY = "goala-context";
 
 export function truncate(text: string, length = 88): string {
 	return text.length <= length ? text : `${text.slice(0, length - 1)}…`;
@@ -32,6 +37,7 @@ export function formatState(state: GoalState): string {
 		`Progress: ${done}/${state.plan.length || "unplanned"}`,
 		`Review policy: ${state.reviewPolicy}`,
 		`Authoritative sources: ${state.sources.length}`,
+		`Remembered guidance: ${state.memoryContext.references.length} selected document(s)`,
 		`Repair cycles: ${state.repairCycles}`,
 	];
 	const reviewStep = state.plan.find(
@@ -119,6 +125,22 @@ export function registerPresenters(pi: ExtensionAPI): void {
 		STATUS_VIEW_ENTRY,
 		(entry) => new Text(entry.data?.content ?? "Goal status is unavailable.", 1, 0),
 	);
+	pi.registerEntryRenderer<ContextViewEntry>(
+		CONTEXT_VIEW_ENTRY,
+		(entry, _options, theme) => {
+			const content = entry.data?.content ?? "Dream guidance is unavailable.";
+			const styled = content
+				.split("\n")
+				.map((line, index) => {
+					if (index === 0 || line === "Advisory guidance" || line === "Binding guidance") {
+						return theme.fg("accent", line);
+					}
+					return theme.fg("text", line);
+				})
+				.join("\n");
+			return new Text(styled, 1, 0);
+		},
+	);
 }
 
 export function displayPlan(pi: ExtensionAPI, state: GoalState): void {
@@ -129,6 +151,10 @@ export function displayPlan(pi: ExtensionAPI, state: GoalState): void {
 
 export function displayStatus(pi: ExtensionAPI, content: string): void {
 	pi.appendEntry<StatusViewEntry>(STATUS_VIEW_ENTRY, { content });
+}
+
+export function displayGoalContext(pi: ExtensionAPI, content: string): void {
+	pi.appendEntry<ContextViewEntry>(CONTEXT_VIEW_ENTRY, { content });
 }
 
 export function updateGoalUi(ctx: ExtensionContext, state: GoalState): void {
@@ -149,6 +175,9 @@ export function updateGoalUi(ctx: ExtensionContext, state: GoalState): void {
 	];
 	if (state.sources.length > 0) {
 		lines.push(`Sources: ${state.sources.length}`);
+	}
+	if (state.memoryContext.references.length > 0) {
+		lines.push(`Guidance: ${state.memoryContext.references.length} Dream document(s)`);
 	}
 	for (const step of state.plan) {
 		lines.push(`${stepSymbol(step.status)} ${step.id}. ${truncate(step.title, 76)}`);

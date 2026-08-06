@@ -171,10 +171,8 @@ const sessionDir = resolve(args["session-dir"] ?? `${output}.sessions`);
 mkdirSync(sessionDir, { recursive: true });
 
 const rpc = new PiRpc(cwd, sessionDir, {
-	PI_GOALA_MEMORY_ENABLED: args.memory === "off" ? "0" : "1",
 	PI_GOALA_FRESH_SESSIONS: args["fresh-sessions"] === "off" ? "0" : "1",
 	PI_GOALA_REVIEW_POLICY: args["review-policy"] ?? "final",
-	PI_GOALA_MEMORY_ROOT: resolve(args["memory-root"] ?? `${output}.memory`),
 }, args.extension);
 
 const startedAt = new Date().toISOString();
@@ -227,7 +225,6 @@ try {
 		cwd,
 		objective: args.objective,
 		source: args.source ?? null,
-		memory: args.memory === "off" ? "off" : "on",
 		freshSessions: args["fresh-sessions"] === "off" ? "off" : "on",
 		reviewPolicy,
 		stepVerification,

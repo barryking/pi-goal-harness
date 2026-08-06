@@ -2,15 +2,16 @@
 
 Goala—Goal-Oriented Agent Lifecycle Architecture—is an installable
 plan → execute → independently verify workflow for [Pi](https://pi.dev), with
-phase-isolated context and verifier-gated episodic memory.
+phase-isolated context and an optional read-only integration with
+[Pi Dream](https://www.npmjs.com/package/pi-dream).
 
 ```text
-goal → recall verified memory → read-only plan → explicit approval
-                                                     |
-                                                     v
-                         fresh execution session → independent verify → complete
-                                     ^                       |
-                                     └──────── repair ───────┘
+goal → optional Dream guidance → read-only plan → explicit approval
+                                                       |
+                                                       v
+                           fresh execution session → independent verify → complete
+                                       ^                       |
+                                       └──────── repair ───────┘
 
 per-step review:
 execute one step → run checks → human approve/revise → next step
@@ -24,11 +25,11 @@ Goala turns an outcome into a persistent, testable workflow:
 - a faster coding model works through the approved plan;
 - a separate verifier checks actual files and test output without editing;
 - failed verification returns actionable defects to a bounded repair loop;
-- only independently verified outcomes become searchable long-term memory.
+- ordinary Pi sessions retain the full work for later inspection or Dream use.
 
 ## Install
 
-Pi 0.82 or newer and Node.js 22.19 or newer are recommended.
+Pi 0.83 or newer and Node.js 22.19 or newer are recommended.
 
 Install the latest release from npm:
 
@@ -101,6 +102,7 @@ Useful commands:
 /goal --source <path> -- <objective>
                         Start a goal with an authoritative requirements file
 /goal status            Show the active goal or a recoverable saved goal
+/goal context           Show a readable Dream-guidance summary for this goal
 /goal approve           Accept the reviewed step and continue
 /goal revise <feedback> Return the reviewed step for revision
 /goal pause             Stop advancing while preserving the goal
@@ -111,10 +113,8 @@ Useful commands:
 /plan --replace         Explicitly discard a progressed plan
 /execute [final|per-step] Approve the plan with a review policy
 /verify                 Independently verify a checkpoint or the final goal
-/memory-status          Show memory health and recent active/retired episodes
-/memory retire <id>     Exclude an obsolete episode from recall
-/memory restore <id>    Restore a retired episode
-/goala-setup            Choose a model preset
+/goala-setup            Configure the models used by Goala
+/goala-setup default    Follow Pi's default model for every role
 /goala-setup custom     Review or change each role's model and reasoning
 /goala-setup status     Show effective configuration
 ```
@@ -291,8 +291,7 @@ operating-system sandbox and it does not make a risky command safe.
 ### An overarching goal
 
 Do not make one Goala goal carry an indefinite product roadmap. Goala
-tracks one active goal in the current Pi session tree, and durable memory is
-written only after that goal passes final verification. Instead:
+tracks one active goal in the current Pi session tree. Instead:
 
 1. Keep the stable objective, constraints, decisions, and milestone list in a
    repository document such as `PROJECT_GOAL.md` or `ROADMAP.md`.
@@ -306,7 +305,6 @@ repository remains the source of truth across sessions.
 
 ### Where stack, architecture, and guidance belong
 
-Goala memory is verified history, not the place to configure a project.
 Use this hierarchy:
 
 | Information | Put it here |
@@ -318,7 +316,7 @@ Use this hierarchy:
 | Product direction and future milestones | `PROJECT_GOAL.md` or `ROADMAP.md` |
 | Personal defaults that apply to every repository | `~/.pi/agent/AGENTS.md` |
 | Repeatable procedures such as commit/PR, release, deployment, or framework workflows | Pi skills, referenced from `AGENTS.md` when mandatory |
-| Distilled experience from successfully completed work | Verified Goala episodic memory |
+| Durable remembered guidance | Pi Dream, when installed |
 
 Pi loads repository and global `AGENTS.md` files into every fresh Goala phase.
 Keep them concise because repeated instructions consume context in
@@ -353,15 +351,14 @@ the goal instead of changing the durable project rules:
 /goal Add CSV export using the existing TypeScript and React stack. Keep domain logic framework-independent, follow docs/architecture.md, and do not add runtime dependencies.
 ```
 
-If a verified task produces a reusable lesson, the independent final verifier
-can include it as an evidence-backed episode finding. Important decisions
-should still be committed to the repository; future memory is bounded,
-relevance-ranked, and deliberately treated as untrusted evidence.
+Important decisions should still be committed to the repository. Dream may
+later derive reusable knowledge from the ordinary Pi sessions produced by a
+Goala run; Goala does not send it a Goal receipt or write memory on completion.
 
 ### Customise your workflow
 
 Goala works with a standard Pi installation and provides the goal, planning,
-execution, verification, and memory lifecycle. It does not prescribe every
+execution, repair, and verification lifecycle. It does not prescribe every
 project procedure.
 
 Put concise, always-applicable rules in the repository's `AGENTS.md`, and put
@@ -385,30 +382,32 @@ new bounded goal when the desired outcome has materially changed.
 
 ## Model roles
 
-The recommended OpenAI Codex preset is:
+By default, every Goala role uses the model selected by Pi when the session
+starts:
 
-| Model role | Model | Reasoning |
-|---|---|---:|
-| Planner | `gpt-5.6-sol` | medium |
-| Executor | `gpt-5.6-luna` | medium |
-| Optional step verifier | `gpt-5.6-luna` | medium |
-| Final verifier | `gpt-5.6-sol` | medium |
-| Fallback executor | `gpt-5.6-terra` | medium |
+| Model role | Default |
+|---|---|
+| Planner | Pi default model |
+| Executor | Pi default model |
+| Optional step verifier | Pi default model |
+| Final verifier | Pi default model |
+| Fallback executor | Pi default model |
 
 Repeated repair is not a separate lifecycle phase. It loops back into
 execution after verification fails. The fallback executor replaces the normal
 executor only after the configured number of failed verification attempts.
 
-If those models are unavailable, Goala can use the model that was active
-when Pi started. Run `/goala-setup current` to persist that portable
-single-model configuration. Run `/goala-setup custom` to choose an
-authenticated provider/model and reasoning level separately for planning,
-execution, step verification, final verification, and repeated repair. The
-interactive wizard defaults to keeping each current role. It can change
-reasoning alone or select a provider followed by one of that provider's
-available models. Provider selection is skipped when only one is authenticated.
-A final summary can be edited, saved, or cancelled; nothing is written before
-save.
+The default is a live reference rather than a copied provider/model name, so
+changing Pi's default also changes Goala's next session. Goala preserves Pi's
+session reasoning setting and limits it to the levels supported by the active
+model in Pi's `models.json`; non-reasoning models run with reasoning off.
+
+Run `/goala-setup custom` to pin an authenticated provider/model and reasoning
+level separately for planning, execution, step verification, final
+verification, and repeated repair. The wizard only offers reasoning levels
+supported by the selected model. Roles left as `Pi default` remain dynamic. A
+final summary can be edited, saved, or cancelled; nothing is written before
+save. `/goala-setup default` restores every role to Pi's dynamic default.
 
 Advanced users can edit the same per-role profiles in
 `~/.pi/agent/pi-goala/config.json`.
@@ -416,57 +415,32 @@ Advanced users can edit the same per-role profiles in
 The package does not overwrite Pi's `settings.json`, model list, skills,
 prompts, other extensions, or authentication.
 
-## Memory with a trust boundary
+## Optional Dream guidance
 
-The four CoALA memory types have distinct homes:
+Goala works normally without Dream. When `pi-dream` 0.3.0 or newer is also
+installed and the current repository is managed by Dream, starting a Goal:
 
-| Type | Placement |
-|---|---|
-| Working | Bounded current phase packet |
-| Semantic | `AGENTS.md`, architecture docs, ADRs, and other versioned project knowledge |
-| Procedural | Pi skills and the executable Goala workflow |
-| Episodic | Distilled, independently verified prior-task episodes in local SQLite |
+1. discovers only the current repository and its Primary shared-memory Store;
+2. searches promoted Dream documents once using the Goal objective;
+3. lets an interactive user use all results as advisory guidance, review each
+   result as advisory/binding, or skip them;
+4. reads the selected exact Store versions and keeps a bounded immutable
+   snapshot in the Goal state.
 
-Goala owns working-memory assembly and episodic recall. It does not copy
-semantic or procedural sources of truth into its database.
+Non-interactive runs may take the four highest-ranked results as advisory only.
+Goala never infers a binding constraint without an interactive choice.
 
-Episodic memory is local, bounded, and advisory:
+Advisory guidance is a lead to confirm against current code, tests, and project
+instructions. Binding guidance becomes part of the Goal contract and is shown
+to the final verifier. `/goal context` displays a persistent, high-contrast
+summary with the Store, commit, document, hash, and authority selected for the
+current Goal. A newer Dream promotion does not change an in-flight Goal.
 
-1. Starting `/goal` searches active verified episodes using the new objective
-   and ranks results from the current repository first.
-2. Up to four relevant results and 6,000 characters are recalled by default;
-   planning and execution may run narrower searches when needed.
-3. Recall contains verified outcomes, evidence-backed findings, open items,
-   relevant files, commit provenance, and repository ancestry. It never
-   replays the previous planning or execution conversation.
-4. Current code, `AGENTS.md`, tests, the goal, and acceptance criteria outrank
-   memory. Recall is labelled as untrusted evidence, never instructions.
-5. The final verifier receives no recalled memory or executor completion
-   claims. Only findings derived from its own inspection and checks become
-   reusable learnings; an empty list is valid.
-6. `/memory retire <id>` makes an obsolete episode ineligible for recall
-   without deleting its audit record; `/memory restore <id>` reverses that.
-7. Common secret patterns are redacted and content hashes deduplicate
-   episodes. Full redacted transcript retention is optional and disabled by
-   default.
-
-Episodic memory can help a later related goal rediscover what previously worked;
-it does not guarantee a preferred stack, enforce architecture, remember every
-discussion, or replace version-controlled project documentation. Run
-`/memory-status` to see recent promoted episodes.
-
-Data is namespaced under:
-
-```text
-~/.pi/agent/pi-goala/
-├── config.json
-└── memory/
-    ├── goala.sqlite3
-    └── evidence/<goal-id>/  # only when cold evidence is enabled
-```
-
-Directories are `0700`; configuration, database, manifests, and transcript
-evidence are `0600`.
+The integration is read-only. Goala does not create Dream jobs, Candidates,
+Stores, receipts, or completion records. It also has no SQLite fallback and no
+legacy memory reader, writer, command, tool, configuration, or migration path.
+Dream remains responsible for its own `/memory` and `/dream` UX and can learn
+from the same ordinary repository-scoped Pi sessions it already understands.
 
 ## Context isolation
 
@@ -476,15 +450,17 @@ small persisted handoff. In `per-step` review, every approved step starts the
 next executor session with only the remaining plan and relevant goal state.
 Automatic execution-to-verification transitions use a signed context boundary
 so each verifier sees the goal, relevant criteria and verification methods,
-and current tool results—not recalled memory or old completion claims.
+and current tool results—not advisory guidance or old completion claims.
 
 The complete transcript remains local for provenance while provider context is
 bounded to what the current phase needs.
 
 ## Evaluation evidence
 
-The repository includes deterministic memory/context tests and a reproducible
-end-to-end fixture. Results from the original OpenAI Codex evaluation:
+The repository includes deterministic context tests and a reproducible
+end-to-end fixture. The historical local-memory experiment remains documented
+as evidence that motivated this boundary; current Goala delegates durable
+memory to Dream. Results from that original OpenAI Codex evaluation:
 
 | Measurement | Control | Memory flow | Change |
 |---|---:|---:|---:|
@@ -533,25 +509,25 @@ access. See [security and limitations](docs/security.md).
 
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
-- [Memory model](docs/memory.md)
+- [Dream integration](docs/memory.md)
 - [Evaluation](docs/evaluation.md)
 - [Security](docs/security.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Influences and acknowledgments
 
-The memory architecture is inspired by
+The context architecture is inspired by
 [CoALA: Cognitive Architectures for Language Agents](https://arxiv.org/abs/2309.02427),
 especially its separation of working, semantic, procedural, and episodic
 memory. [This memory-system talk](https://www.youtube.com/watch?v=BacJ6sEhqMo)
-prompted the practical placement used here: bounded context for working memory,
-project files for semantic memory, progressively disclosed skills/workflows for
-procedural memory, and distilled cross-session experience for episodic memory.
+prompted the practical placement used here: bounded Goal context, project files
+for durable project knowledge, progressively disclosed skills/workflows for
+procedures, and Dream as an optional peer for cross-session memory.
 
 Public implementation notes from
 [Entire's checkpoint architecture](https://github.com/entireio/cli/blob/ec5d9a7610039703017e4fa8c34a070ce47dc3b3/docs/architecture/sessions-and-checkpoints.md#L196-L255)
-informed the general ideas of durable episode provenance, stable identifiers,
-and linking evidence to repository state. Goala is an independent
+informed the general ideas of stable identifiers and linking evidence to
+repository state. Goala is an independent
 implementation and has no Entire runtime, service, SDK, storage-format, or
 installation dependency.
 

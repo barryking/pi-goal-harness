@@ -31,8 +31,7 @@ For a recoverable clean migration:
    pi install npm:pi-goala
    ```
 
-6. Confirm `pi list` shows the package, then start Pi and run
-   `/goal-status` and `/memory-status`.
+6. Confirm `pi list` shows the package, then start Pi and run `/goal-status`.
 
 This approach preserves old sessions, configuration, and workflow data only in
 the backup for rollback. They are not migrated into or available from the
@@ -44,66 +43,55 @@ and restore the backup to `~/.pi/agent/`.
 ```text
 /goala-setup
 /goala-setup status
-/goala-setup openai
-/goala-setup current
+/goala-setup default
 /goala-setup custom
 ```
 
-`openai` selects the tested Sol/Luna/Terra model split when those models are
-available. `current` assigns the model active at Pi startup to every role.
+`default` makes every role follow the model selected by Pi at session startup.
+This is a dynamic reference: Goala does not copy or pin that model name.
 `custom` reviews each role and defaults to keeping its current configuration.
-For a change, it can adjust reasoning alone or select a provider followed by
-one of that provider's authenticated, available models. Provider selection is
-skipped when only one provider is available. The final summary can be edited,
-saved, or cancelled. Cancelling any prompt leaves the existing configuration
-unchanged.
+It can pin a provider/model and reasoning level for selected roles while
+leaving the others on Pi's default. Provider selection is skipped when only
+one provider is available. Reasoning choices come from the selected model's
+Pi `models.json` metadata; unsupported levels are not offered, and
+non-reasoning models use `off`. The final summary can be edited, saved, or
+cancelled. Cancelling any prompt leaves the existing configuration unchanged.
 
 ## Full schema
 
 ```json
 {
-  "configVersion": 2,
-  "planner": {
-    "provider": "openai-codex",
-    "model": "gpt-5.6-sol",
-    "thinkingLevel": "medium"
-  },
-  "executor": {
-    "provider": "openai-codex",
-    "model": "gpt-5.6-luna",
-    "thinkingLevel": "medium"
-  },
+  "configVersion": 4,
+  "planner": { "kind": "pi-default" },
+  "executor": { "kind": "pi-default" },
   "fallbackExecutor": {
-    "provider": "openai-codex",
-    "model": "gpt-5.6-terra",
-    "thinkingLevel": "medium",
+    "kind": "pi-default",
     "afterRepairCycle": 2
   },
-  "stepVerifier": {
-    "provider": "openai-codex",
-    "model": "gpt-5.6-luna",
-    "thinkingLevel": "medium"
-  },
-  "verifier": {
-    "provider": "openai-codex",
-    "model": "gpt-5.6-sol",
-    "thinkingLevel": "medium"
-  },
+  "stepVerifier": { "kind": "pi-default" },
+  "verifier": { "kind": "pi-default" },
   "reviewPolicy": "final",
   "autoVerify": true,
   "maxRepairCycles": 3,
   "freshSessionPerPhase": true,
-  "allowCurrentModelFallback": true,
-  "memory": {
-    "enabled": true,
-    "autoRecall": true,
-    "maxResults": 4,
-    "maxInjectedChars": 6000,
-    "maxResultChars": 900,
-    "storeColdEvidence": false
-  }
+  "allowCurrentModelFallback": true
 }
 ```
+
+An explicitly pinned role has this shape:
+
+```json
+{
+  "kind": "fixed",
+  "provider": "your-provider",
+  "model": "your-model-id",
+  "thinkingLevel": "medium"
+}
+```
+
+At runtime Goala clamps a fixed reasoning level to the selected model's
+supported levels. This also protects a manually edited configuration when the
+provider's model metadata changes.
 
 `fallbackExecutor` is not a separate lifecycle phase. It replaces the normal
 executor inside the repair loop after repeated verification failures.
@@ -114,9 +102,12 @@ execution uses the fallback executor.
 
 Restart Pi or use `/reload` after manually editing the file.
 
-Version 1 configuration used one top-level `provider`. Goala reads that schema,
-applies the provider to every role, and writes only version 2 when the
-configuration is next saved.
+Version 1 configuration used one top-level `provider`; profiles containing a
+model are migrated to fixed version 4 profiles. Version 2 could contain local
+memory settings. Version 3 profiles are also migrated to fixed profiles. Goala
+writes only version 4 and deliberately drops the obsolete top-level `provider`
+and `memory` fields when configuration is next saved. Missing roles become Pi
+defaults instead of inheriting a vendor-specific model.
 
 `reviewPolicy` accepts:
 
@@ -149,8 +140,6 @@ These are primarily useful for CI and isolated evaluation:
 
 ```text
 PI_GOALA_HOME=<namespaced data directory>
-PI_GOALA_MEMORY_ROOT=<memory-only directory>
-PI_GOALA_MEMORY_ENABLED=0|1
 PI_GOALA_FRESH_SESSIONS=0|1
 PI_GOALA_REVIEW_POLICY=final|per-step
 ```
@@ -164,5 +153,8 @@ pi remove npm:pi-goala
 ```
 
 Package removal does not delete `~/.pi/agent/pi-goala/`. This preserves
-configuration and verified memory for reinstall or manual backup. Remove that
-directory separately only when its data is no longer needed.
+configuration for reinstall or manual backup. Remove that directory separately
+only when its data is no longer needed.
+
+Goala no longer reads or migrates SQLite databases or evidence directories
+created by older releases. There is no legacy memory compatibility setting.

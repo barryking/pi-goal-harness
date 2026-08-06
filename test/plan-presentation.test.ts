@@ -149,6 +149,29 @@ test("submitting and reopening a plan emits a rendered TUI-only entry", async ()
 	assert.equal(sourceState.sources.length, 1);
 	assert.equal(sourceState.sources[0].path, "docs/PRD.md");
 	assert.match(sourceState.sources[0].sha256, /^[a-f0-9]{64}$/);
+	await commands.get("goal")?.handler("context", ctx);
+	const contextEntry = entries.filter(
+		(entry) => entry.customType === "goala-context",
+	).at(-1);
+	assert.ok(contextEntry);
+	assert.match(contextEntry.data.content, /Dream guidance for this Goal/);
+	assert.equal(notifications.length, 0, "goal context should not use a grey info notification");
+	const contextRenderer = entryRenderers.get("goala-context");
+	assert.equal(typeof contextRenderer, "function");
+	const contextColors: string[] = [];
+	const contextComponent = contextRenderer(
+		{ data: contextEntry.data },
+		{ expanded: false, outputPad: 0 },
+		{
+			fg: (color: string, text: string) => {
+				contextColors.push(color);
+				return text;
+			},
+		},
+	);
+	assert.match(contextComponent.render(120).join("\n"), /Goala works normally without Dream guidance/);
+	assert.ok(contextColors.includes("accent"));
+	assert.ok(contextColors.includes("text"));
 	await commands.get("goal-plan")?.handler("", ctx);
 	assert.match(notifications.at(-1)?.message ?? "", /does not have a submitted plan yet/);
 	notifications.length = 0;

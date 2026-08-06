@@ -1,9 +1,14 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type {
+	FixedModelProfile,
 	GoalaConfig,
 	ModelProfile,
 	ThinkingLevel,
 } from "./config.ts";
+import {
+	clampThinkingLevel,
+	supportedThinkingLevels,
+} from "./model-capabilities.ts";
 
 type ModelRole =
 	| "planner"
@@ -22,16 +27,6 @@ const MODEL_ROLES: ReadonlyArray<{ key: ModelRole; label: string }> = [
 	{ key: "stepVerifier", label: "Step verifier" },
 	{ key: "verifier", label: "Final verifier" },
 	{ key: "fallbackExecutor", label: "Fallback executor" },
-];
-
-const THINKING_LEVELS: readonly ThinkingLevel[] = [
-	"off",
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
-	"max",
 ];
 
 const KEEP_CURRENT = "Keep current";
@@ -71,6 +66,9 @@ function profileLabel(
 	available: AvailableModel[],
 	profile: ModelProfile,
 ): string {
+	if (profile.kind === "pi-default") {
+		return "Pi default model / Pi reasoning setting (limited by model support)";
+	}
 	const model = available.find(
 		(candidate) =>
 			candidate.provider === profile.provider && candidate.id === profile.model,
@@ -104,17 +102,20 @@ function setProfile(
 async function selectThinkingLevel(
 	ctx: ExtensionCommandContext,
 	roleLabel: string,
-	profile: ModelProfile,
+	profile: FixedModelProfile,
+	model: AvailableModel,
 ): Promise<ThinkingLevel | undefined> {
+	const supported = supportedThinkingLevels(model);
+	const current = clampThinkingLevel(model, profile.thinkingLevel);
 	const ordered = [
-		profile.thinkingLevel,
-		...THINKING_LEVELS.filter((level) => level !== profile.thinkingLevel),
+		current,
+		...supported.filter((level) => level !== current),
 	];
 	const choices = ordered.map((level, index) =>
 		index === 0 ? `${thinkingLabel(level)} (current)` : thinkingLabel(level),
 	);
 	const selected = await ctx.ui.select(
-		`${roleLabel} reasoning effort\nCurrent: ${thinkingLabel(profile.thinkingLevel)}`,
+		`${roleLabel} reasoning effort\nCurrent: ${thinkingLabel(current)}`,
 		choices,
 	);
 	if (!selected) return undefined;
@@ -154,7 +155,7 @@ async function selectModel(
 	available: AvailableModel[],
 	roleLabel: string,
 	provider: string,
-	current: ModelProfile,
+	current: FixedModelProfile,
 ): Promise<AvailableModel | undefined> {
 	const models = available
 		.filter((model) => model.provider === provider)
@@ -185,7 +186,7 @@ async function changeModel(
 	ctx: ExtensionCommandContext,
 	available: AvailableModel[],
 	roleLabel: string,
-	current: ModelProfile,
+	current: FixedModelProfile,
 ): Promise<ModelProfile | undefined> {
 	const provider = await selectProvider(
 		ctx,
@@ -197,16 +198,40 @@ async function changeModel(
 	const model = await selectModel(ctx, available, roleLabel, provider, current);
 	if (!model) return undefined;
 
-	const profile: ModelProfile = {
+	const profile: FixedModelProfile = {
+		kind: "fixed",
 		provider: model.provider,
 		model: model.id,
-		thinkingLevel: model.reasoning ? current.thinkingLevel : "off",
+		thinkingLevel: clampThinkingLevel(model, current.thinkingLevel),
 	};
 	if (!model.reasoning) return profile;
 
-	const thinkingLevel = await selectThinkingLevel(ctx, roleLabel, profile);
+	const thinkingLevel = await selectThinkingLevel(ctx, roleLabel, profile, model);
 	if (!thinkingLevel) return undefined;
 	return { ...profile, thinkingLevel };
+}
+
+function editableProfile(
+	ctx: ExtensionCommandContext,
+	available: AvailableModel[],
+	current: ModelProfile,
+): FixedModelProfile | undefined {
+	if (current.kind === "fixed") return current;
+	const active = ctx.model
+		? available.find(
+			(model) =>
+				model.provider === ctx.model?.provider && model.id === ctx.model?.id,
+		)
+		: undefined;
+	const model = active ?? available[0];
+	if (!model) return undefined;
+	const requested = (ctx.thinkingLevel as ThinkingLevel | undefined) ?? "off";
+	return {
+		kind: "fixed",
+		provider: model.provider,
+		model: model.id,
+		thinkingLevel: clampThinkingLevel(model, requested),
+	};
 }
 
 async function configureRole(
@@ -216,10 +241,13 @@ async function configureRole(
 	role: { key: ModelRole; label: string },
 ): Promise<boolean> {
 	const current = config[role.key];
-	const currentModel = available.find(
-		(model) =>
-			model.provider === current.provider && model.id === current.model,
-	);
+	const fixedCurrent = editableProfile(ctx, available, current);
+	const currentModel = current.kind === "fixed"
+		? available.find(
+			(model) =>
+				model.provider === current.provider && model.id === current.model,
+		)
+		: undefined;
 	const actions = [
 		KEEP_CURRENT,
 		...(currentModel?.reasoning ? [CHANGE_REASONING] : []),
@@ -237,13 +265,20 @@ async function configureRole(
 	if (action === KEEP_CURRENT) return true;
 
 	if (action === CHANGE_REASONING) {
-		const thinkingLevel = await selectThinkingLevel(ctx, role.label, current);
+		if (current.kind !== "fixed" || !currentModel) return false;
+		const thinkingLevel = await selectThinkingLevel(
+			ctx,
+			role.label,
+			current,
+			currentModel,
+		);
 		if (!thinkingLevel) return false;
 		setProfile(config, role.key, { ...current, thinkingLevel });
 		return true;
 	}
 
-	const profile = await changeModel(ctx, available, role.label, current);
+	if (!fixedCurrent) return false;
+	const profile = await changeModel(ctx, available, role.label, fixedCurrent);
 	if (!profile) return false;
 	setProfile(config, role.key, profile);
 	return true;
