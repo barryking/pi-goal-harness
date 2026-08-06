@@ -135,3 +135,33 @@ test("drops legacy memory configuration instead of retaining a compatibility pat
 	assert.equal("memory" in migrated, false);
 	assert.equal("memory" in JSON.parse(readFileSync(writeConfig(migrated), "utf8")), false);
 });
+
+test("normalizes malformed version 4 settings to safe defaults", () => {
+	writeFileSync(
+		configPath(),
+		JSON.stringify({
+			configVersion: 4,
+			planner: { kind: "fixed", provider: "example", model: "", thinkingLevel: "high" },
+			executor: { kind: "fixed", provider: "example", model: "code", thinkingLevel: "invalid" },
+			fallbackExecutor: { kind: "pi-default", afterRepairCycle: -1 },
+			maxRepairCycles: 1.5,
+			autoVerify: "yes",
+			freshSessionPerPhase: 1,
+			allowCurrentModelFallback: null,
+		}),
+	);
+
+	const normalized = loadConfig();
+	assert.equal(normalized.planner.kind, "pi-default");
+	assert.deepEqual(normalized.executor, {
+		kind: "fixed",
+		provider: "example",
+		model: "code",
+		thinkingLevel: "medium",
+	});
+	assert.equal(normalized.fallbackExecutor.afterRepairCycle, 2);
+	assert.equal(normalized.maxRepairCycles, 3);
+	assert.equal(normalized.autoVerify, true);
+	assert.equal(normalized.freshSessionPerPhase, true);
+	assert.equal(normalized.allowCurrentModelFallback, true);
+});

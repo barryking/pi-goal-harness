@@ -196,7 +196,7 @@ function normalizeMemoryContext(value: unknown): GoalMemoryContext {
 				!isRecord(reference) ||
 				(reference.authority !== "advisory" && reference.authority !== "binding") ||
 				(reference.storeScope !== "repository" && reference.storeScope !== "workspace") ||
-				!["storeId", "storeName", "commit", "path", "sha256", "excerpt", "content"].every(
+				!["storeId", "storeName", "commit", "path", "sha256", "content"].every(
 					(key) => typeof reference[key] === "string",
 				) ||
 				!/^[a-f0-9]{64}$/.test(reference.sha256 as string) ||

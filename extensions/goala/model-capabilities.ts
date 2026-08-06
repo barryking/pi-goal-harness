@@ -1,19 +1,9 @@
-import type { ThinkingLevel } from "./config.ts";
+import { THINKING_LEVELS, type ThinkingLevel } from "./config.ts";
 
 export interface ReasoningModel {
 	reasoning: boolean;
 	thinkingLevelMap?: Partial<Record<ThinkingLevel, string | null>>;
 }
-
-export const THINKING_LEVELS: readonly ThinkingLevel[] = [
-	"off",
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
-	"max",
-];
 
 export function supportedThinkingLevels(
 	model: ReasoningModel,
@@ -35,6 +25,8 @@ export function clampThinkingLevel(
 	if (supported.includes(requested)) return requested;
 
 	const requestedIndex = THINKING_LEVELS.indexOf(requested);
+	// Match Pi's own clampThinkingLevel ordering: prefer the next supported
+	// higher level, then search downward when no higher level is available.
 	for (let index = requestedIndex + 1; index < THINKING_LEVELS.length; index += 1) {
 		const candidate = THINKING_LEVELS[index];
 		if (supported.includes(candidate)) return candidate;

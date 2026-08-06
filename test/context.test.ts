@@ -10,7 +10,6 @@ const memory = {
 	path: "rules/window.md",
 	sha256: "a".repeat(64),
 	authority: "advisory" as const,
-	excerpt: "Range is 1..3600",
 	content: "Use strict parsing. The supported range is 1..3600.",
 };
 
@@ -58,4 +57,22 @@ test("verification receives binding guidance but excludes advisory guidance", ()
 	assert.ok(!packet.includes(memory.path));
 	assert.ok(packet.includes(binding.path));
 	assert.ok(!packet.includes("Completed evidence"));
+});
+
+test("planning distinguishes unavailable Dream from deliberately empty guidance", () => {
+	const packet = buildPhaseContext({
+		objective: "Harden window parsing",
+		acceptanceCriteria: [],
+		phase: "planning",
+		plan: [],
+		memoryContext: {
+			status: "unavailable",
+			references: [],
+			message: "Dream is not initialized.",
+		},
+	});
+
+	assert.match(packet, /Dream guidance is unavailable/);
+	assert.match(packet, /Dream is not initialized/);
+	assert.doesNotMatch(packet, /No Dream documents were selected/);
 });

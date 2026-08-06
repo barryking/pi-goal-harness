@@ -250,7 +250,7 @@ test("the default profile follows Pi's session model and clamps its reasoning", 
 		getAllTools: () => [{ name: "read" }],
 		setActiveTools() {},
 		async setModel(model: { provider: string; id: string }) {
-			selectedModel = model;
+			selectedModel = { provider: model.provider, id: model.id };
 			return true;
 		},
 		setThinkingLevel(level: string) {
@@ -299,7 +299,6 @@ test("the default profile follows Pi's session model and clamps its reasoning", 
 	assert.deepEqual(selectedModel, {
 		provider: "local-provider",
 		id: "plain-model",
-		reasoning: false,
 	});
 	assert.equal(selectedThinking, "off");
 });

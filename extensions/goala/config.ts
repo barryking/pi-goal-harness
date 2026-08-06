@@ -7,7 +7,16 @@ import {
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+export const THINKING_LEVELS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export type ReviewPolicy = "final" | "per-step";
 
 export interface PiDefaultModelProfile {
@@ -82,9 +91,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isThinkingLevel(value: unknown): value is ThinkingLevel {
-	return ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
-		value as string,
-	);
+	return (THINKING_LEVELS as readonly unknown[]).includes(value);
 }
 
 function normalizeProfile(
@@ -200,7 +207,10 @@ export function fixedModelConfig(
 		...structuredClone(PI_DEFAULT_CONFIG),
 		planner: { ...profile },
 		executor: { ...profile },
-		fallbackExecutor: { ...profile, afterRepairCycle: 2 },
+		fallbackExecutor: {
+			...profile,
+			afterRepairCycle: PI_DEFAULT_CONFIG.fallbackExecutor.afterRepairCycle,
+		},
 		stepVerifier: { ...profile },
 		verifier: { ...profile },
 	};

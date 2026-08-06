@@ -94,3 +94,36 @@ test("oversized Dream documents are skipped instead of bloating Goal state", asy
 	assert.deepEqual(captured.references, []);
 	assert.match(captured.warnings[0], /limited to 64,000 characters/);
 });
+
+test("capture rejects a document that does not match the selected version", async () => {
+	const hit = { ...reference, excerpt: "pinned", score: 0.8 };
+	const client = new DreamMemoryClient(async () => ({
+		createMemoryReader: async () => ({
+			discover: async () => ({ repositoryIdentity: "repo", stores: [] }),
+			search: async () => [hit],
+			read: async () => ({
+				...reference,
+				commit: "c".repeat(40),
+				content: "Content from the wrong version.",
+			}),
+		}),
+	}));
+
+	const captured = await client.capture([{ hit, authority: "binding" }]);
+	assert.deepEqual(captured.references, []);
+	assert.match(captured.warnings[0], /different document version or hash/);
+});
+
+test("Dream timeouts leave the Goal lifecycle available", async () => {
+	const client = new DreamMemoryClient(async () => ({
+		createMemoryReader: async () => ({
+			discover: async () => new Promise(() => {}),
+			search: async () => [],
+			read: async () => ({ ...reference, content: "unused" }),
+		}),
+	}), 5);
+
+	const discovery = await client.discover("/fixture", "goal");
+	assert.equal(discovery.status, "unavailable");
+	assert.match(discovery.message ?? "", /did not respond in time/);
+});

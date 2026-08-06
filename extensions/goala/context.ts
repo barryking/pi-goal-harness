@@ -37,9 +37,14 @@ function memoryText(state: PhaseContextState): string {
 		? state.memoryContext.references.filter((reference) => reference.authority === "binding")
 		: state.memoryContext.references;
 	if (references.length === 0) {
-		return state.phase === "planning"
-			? "REMEMBERED GUIDANCE\n- No Dream documents were selected for this Goal."
-			: "";
+		if (state.phase !== "planning") return "";
+		if (state.memoryContext.status === "available") {
+			return `REMEMBERED GUIDANCE
+- ${state.memoryContext.message ?? "No Dream documents were selected for this Goal."}`;
+		}
+		return `REMEMBERED GUIDANCE
+- Dream guidance is ${state.memoryContext.status} for this Goal.
+- ${state.memoryContext.message ?? "Continue using the objective, sources, repository, and current instructions."}`;
 	}
 	return `REMEMBERED GUIDANCE SNAPSHOT
 These exact Dream documents were selected when the Goal began. Advisory documents are leads to confirm against current files. Binding documents are constraints that the plan, implementation, and verification must satisfy.

@@ -1,5 +1,6 @@
 import type {
 	DreamMemoryReader,
+	MemoryDocument,
 	MemoryDocumentReference,
 	MemoryHit,
 } from "pi-dream/interop";
@@ -7,13 +8,13 @@ import type {
 const DREAM_INTEROP_SPECIFIER = "pi-dream/interop";
 export const MAX_GOAL_MEMORY_CHARS = 64_000;
 export const MAX_GOAL_MEMORY_REFERENCES = 8;
+export const DREAM_OPERATION_TIMEOUT_MS = 10_000;
 
 export type GoalMemoryAuthority = "advisory" | "binding";
 export type GoalMemoryStatus = "available" | "unavailable" | "error";
 
 export interface GoalMemoryReference extends MemoryDocumentReference {
 	authority: GoalMemoryAuthority;
-	excerpt: string;
 	content: string;
 }
 
@@ -35,6 +36,15 @@ interface DreamInteropModule {
 	createMemoryReader(): Promise<DreamMemoryReader>;
 }
 
+type CaptureAttempt =
+	| {
+		ok: true;
+		hit: MemoryHit;
+		authority: GoalMemoryAuthority;
+		document: MemoryDocument;
+	}
+	| { ok: false; warning: string };
+
 export type DreamInteropLoader = () => Promise<DreamInteropModule | undefined>;
 
 function errorCode(error: unknown): string | undefined {
@@ -44,6 +54,37 @@ function errorCode(error: unknown): string | undefined {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+class DreamTimeoutError extends Error {
+	readonly code = "DREAM_TIMEOUT";
+
+	constructor(operation: string, timeoutMs: number) {
+		super(`${operation} did not complete within ${timeoutMs / 1000} seconds.`);
+	}
+}
+
+function withDreamTimeout<T>(
+	operation: Promise<T>,
+	label: string,
+	timeoutMs: number,
+): Promise<T> {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(
+			() => reject(new DreamTimeoutError(label, timeoutMs)),
+			timeoutMs,
+		);
+		operation.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
 }
 
 export function isMissingDreamInterop(error: unknown): boolean {
@@ -74,6 +115,8 @@ function unavailableMessage(code: string | undefined): string | undefined {
 			return "The current directory is not inside a Git repository known to Dream.";
 		case "REPOSITORY_NOT_MANAGED":
 			return "Dream is installed, but the current repository is not managed by it.";
+		case "DREAM_TIMEOUT":
+			return "Dream did not respond in time. Goala will continue without Dream guidance.";
 		default:
 			return;
 	}
@@ -82,7 +125,10 @@ function unavailableMessage(code: string | undefined): string | undefined {
 export class DreamMemoryClient {
 	private reader: DreamMemoryReader | undefined;
 
-	constructor(private readonly loader: DreamInteropLoader = loadDreamInterop) {}
+	constructor(
+		private readonly loader: DreamInteropLoader = loadDreamInterop,
+		private readonly operationTimeoutMs = DREAM_OPERATION_TIMEOUT_MS,
+	) {}
 
 	private async getReader(): Promise<DreamMemoryReader | undefined> {
 		if (this.reader) return this.reader;
@@ -102,12 +148,15 @@ export class DreamMemoryClient {
 					message: "Dream is not installed. Goala will continue without durable memory.",
 				};
 			}
-			const context = await reader.discover(cwd);
-			const hits = (await reader.search(context, query)).slice(0, MAX_GOAL_MEMORY_REFERENCES);
+			const { context, hits } = await withDreamTimeout((async () => {
+				const context = await reader.discover(cwd);
+				const hits = await reader.search(context, query);
+				return { context, hits };
+			})(), "Dream discovery", this.operationTimeoutMs);
 			return {
 				status: "available",
 				repositoryIdentity: context.repositoryIdentity,
-				hits,
+				hits: hits.slice(0, MAX_GOAL_MEMORY_REFERENCES),
 			};
 		} catch (error) {
 			const message = unavailableMessage(errorCode(error));
@@ -126,33 +175,62 @@ export class DreamMemoryClient {
 		const reader = await this.getReader();
 		if (!reader) return { references: [], warnings: ["Dream is not installed."] };
 
+		const selections = selected.slice(0, MAX_GOAL_MEMORY_REFERENCES);
+		const attempts: CaptureAttempt[] = await Promise.all(selections.map(async ({ hit, authority }) => {
+			try {
+				const document = await withDreamTimeout(
+					reader.read(hit),
+					`Dream read for ${hit.storeName}/${hit.path}`,
+					this.operationTimeoutMs,
+				);
+				return { ok: true, hit, authority, document } as const;
+			} catch (error) {
+				return {
+					ok: false,
+					warning: `${hit.storeName}/${hit.path} could not be captured: ${errorMessage(error)}`,
+				} as const;
+			}
+		}));
+
 		const references: GoalMemoryReference[] = [];
 		const warnings: string[] = [];
 		let capturedChars = 0;
-		for (const { hit, authority } of selected.slice(0, MAX_GOAL_MEMORY_REFERENCES)) {
-			try {
-				const document = await reader.read(hit);
-				if (capturedChars + document.content.length > MAX_GOAL_MEMORY_CHARS) {
-					warnings.push(
-						`${hit.storeName}/${hit.path} was skipped because Goal memory context is limited to ${MAX_GOAL_MEMORY_CHARS.toLocaleString()} characters.`,
-					);
-					continue;
-				}
-				capturedChars += document.content.length;
-				references.push({
-					storeId: document.storeId,
-					storeName: document.storeName,
-					storeScope: document.storeScope,
-					commit: document.commit,
-					path: document.path,
-					sha256: document.sha256,
-					authority,
-					excerpt: hit.excerpt,
-					content: document.content,
-				});
-			} catch (error) {
-				warnings.push(`${hit.storeName}/${hit.path} could not be captured: ${errorMessage(error)}`);
+		for (const attempt of attempts) {
+			if (!attempt.ok) {
+				warnings.push(attempt.warning);
+				continue;
 			}
+			const { hit, authority, document } = attempt;
+			if (
+				document.storeId !== hit.storeId ||
+				document.storeName !== hit.storeName ||
+				document.storeScope !== hit.storeScope ||
+				document.commit !== hit.commit ||
+				document.path !== hit.path ||
+				document.sha256 !== hit.sha256
+			) {
+				warnings.push(
+					`${hit.storeName}/${hit.path} was skipped because Dream returned a different document version or hash.`,
+				);
+				continue;
+			}
+			if (capturedChars + document.content.length > MAX_GOAL_MEMORY_CHARS) {
+				warnings.push(
+					`${hit.storeName}/${hit.path} was skipped because Goal memory context is limited to ${MAX_GOAL_MEMORY_CHARS.toLocaleString("en-US")} characters.`,
+				);
+				continue;
+			}
+			capturedChars += document.content.length;
+			references.push({
+				storeId: document.storeId,
+				storeName: document.storeName,
+				storeScope: document.storeScope,
+				commit: document.commit,
+				path: document.path,
+				sha256: document.sha256,
+				authority,
+				content: document.content,
+			});
 		}
 		return { references, warnings };
 	}

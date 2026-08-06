@@ -13,7 +13,7 @@ test("publishes a conventional, dependency-free Pi package", () => {
 	assert.equal(manifest.dependencies, undefined);
 	assert.equal(manifest.peerDependencies["@earendil-works/pi-coding-agent"], ">=0.83.0");
 	assert.equal(manifest.peerDependencies["@earendil-works/pi-tui"], ">=0.83.0");
-	assert.equal(manifest.peerDependencies["pi-dream"], ">=0.3.0");
+	assert.equal(manifest.peerDependencies["pi-dream"], "^0.3.0");
 	assert.equal(manifest.peerDependenciesMeta["pi-dream"].optional, true);
 	assert.equal(manifest.peerDependencies.typebox, "*");
 });

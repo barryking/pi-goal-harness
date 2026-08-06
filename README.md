@@ -29,7 +29,7 @@ Goala turns an outcome into a persistent, testable workflow:
 
 ## Install
 
-Pi 0.83 or newer and Node.js 22.19 or newer are recommended.
+Pi 0.83.0 or newer is required. Node.js 22.19 or newer is recommended.
 
 Install the latest release from npm:
 
@@ -40,7 +40,7 @@ pi install npm:pi-goala
 Pin a release for reproducible team installations:
 
 ```text
-pi install npm:pi-goala@0.3.3
+pi install npm:pi-goala@0.4.0
 ```
 
 Pi's package command both downloads Goala and registers its extension. A plain
@@ -50,7 +50,7 @@ supported installation path.
 From GitHub or a local checkout:
 
 ```text
-pi install git:github.com/barryking/pi-goala@v0.3.3
+pi install git:github.com/barryking/pi-goala@v0.4.0
 pi install /absolute/path/to/pi-goala
 ```
 

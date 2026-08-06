@@ -208,4 +208,10 @@ test("dynamic defaults remain unpinned until a role is explicitly changed", asyn
 		thinkingLevel: "low",
 	});
 	assert.equal(configured.executor.kind, "pi-default");
+	assert.equal(configured.stepVerifier.kind, "pi-default");
+	assert.equal(configured.verifier.kind, "pi-default");
+	assert.deepEqual(configured.fallbackExecutor, {
+		kind: "pi-default",
+		afterRepairCycle: PI_DEFAULT_CONFIG.fallbackExecutor.afterRepairCycle,
+	});
 });

@@ -46,6 +46,10 @@ test("submitting and reopening a plan emits a rendered TUI-only entry", async ()
 	process.env.PI_GOALA_HOME = mkdtempSync(
 		join(tmpdir(), "pi-goala-plan-presentation-"),
 	);
+	process.env.PI_DREAM_HOME = join(
+		mkdtempSync(join(tmpdir(), "pi-goala-plan-dream-")),
+		"not-initialized",
+	);
 
 	const commands = new Map<string, { handler: (args: string, ctx: any) => unknown }>();
 	const tools = new Map<string, any>();
